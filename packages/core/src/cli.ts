@@ -176,8 +176,13 @@ async function main(argv: string[]): Promise<number> {
   }
 
   if (command === "check-anchor") {
-    const root = existsSync(configPathFrom(options)) ? loadConfig(configPathFrom(options)).repo.root : ".";
-    const report = checkAnchor({ root: resolve(root) });
+    const path = configPathFrom(options);
+    const cfg = existsSync(path) ? loadConfig(path) : undefined;
+    const report = checkAnchor({
+      root: resolve(cfg?.repo.root ?? "."),
+      // Out of bounds for the loop means out of scope for this check too.
+      ...(cfg ? { exclude: cfg.boundaries.protectedPaths } : {}),
+    });
     process.stdout.write(`${formatAnchorReport(report)}\n`);
     // A checker exits 0 when it passes. It is the one command that does not use `nothing`
     // for an empty result, because "found no violations" is a pass, not a no-op - and CI,

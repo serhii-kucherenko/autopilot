@@ -210,3 +210,71 @@ test("a https:// url is not mistaken for a comment", () => {
     ["#ff00aa"],
   );
 });
+
+test("a spacing scale written in bare points still counts as declared", () => {
+  const root = project(
+    { "src/a.css": ".x { padding: 16px; gap: 28px; margin: 13px; }\n" },
+    "# DESIGN\n\n| Token | Value |\n|---|---|\n| spaceMd | 16 |\n| gutterRegular | 28 |\n",
+  );
+  assert.deepEqual(
+    checkAnchor({ root }).violations.map((v) => v.value),
+    ["13px"],
+    "16 and 28 are declared as points; 13 is not declared at all",
+  );
+});
+
+test("inherit and the generic families are not font stacks", () => {
+  const root = project({
+    "src/a.css":
+      "a { font-family: inherit; } b { font-family: sans-serif; } c { font-family: system-ui; } d { font-family: Papyrus; }\n",
+  });
+  assert.deepEqual(
+    checkAnchor({ root }).violations.map((v) => v.value),
+    ["Papyrus"],
+  );
+});
+
+test("a git worktree is never scanned, or every finding multiplies by branch count", () => {
+  const root = project({
+    ".worktrees/other-branch/src/a.css": ".x { color: #ff00aa; }\n",
+    "src/ok.css": ".x { color: #111318; }\n",
+  });
+  const report = checkAnchor({ root });
+  assert.deepEqual(report.violations, []);
+  assert.equal(report.filesScanned, 1);
+});
+
+test("a long report is capped and summarised by file, because nobody reads 3000 lines", () => {
+  const many = Array.from({ length: 60 }, (_v, i) => `.c${i} { color: #ff00${(i % 90) + 10}; }`).join("\n");
+  const root = project({ "src/many.css": `${many}\n`, "src/one.css": ".x { color: #abcdef; }\n" });
+  const text = formatAnchorReport(checkAnchor({ root }));
+
+  assert.match(text, /anchor violations in 2 files \(\d+ colour\)/);
+  assert.match(text, /and \d+ more\. The files with the most:/);
+  assert.ok(text.split("\n").length < 45, "the report stays readable");
+});
+
+test("vendored and generated directories are skipped, whatever the tool named them", () => {
+  const root = project({
+    "ios/DerivedData/SourcePackages/checkouts/lib/bootstrap.css": ".x { color: #ff00aa; }\n",
+    "ios/DerivedData-Sim/SourcePackages/checkouts/lib/bootstrap.css": ".x { color: #ff00aa; }\n",
+    "Pods/Thing/style.css": ".x { color: #ff00aa; }\n",
+    "vendor/other/style.css": ".x { color: #ff00aa; }\n",
+    "app/globals.css": ".x { color: #111318; }\n",
+  });
+  const report = checkAnchor({ root });
+  assert.deepEqual(report.violations, []);
+  assert.equal(report.filesScanned, 1, "only the product's own stylesheet");
+});
+
+test("exclude honours the config's protected paths, since the loop may not touch them", () => {
+  const root = project({
+    "public/pdfjs/viewer.css": ".x { color: #ff00aa; }\n",
+    "app/globals.css": ".x { color: #ff00bb; }\n",
+  });
+  const report = checkAnchor({ root, exclude: ["public/pdfjs/"] });
+  assert.deepEqual(
+    report.violations.map((v) => v.file),
+    ["app/globals.css"],
+  );
+});

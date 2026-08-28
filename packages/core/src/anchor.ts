@@ -14,6 +14,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, extname, relative } from "node:path";
+import { matchesPattern } from "./boundaries.ts";
 
 export type ViolationKind = "colour" | "font" | "spacing";
 
@@ -44,7 +45,29 @@ const SKIPPED_DIRECTORIES = new Set([
   "build",
   "coverage",
   ".autopilot",
+  // Git worktrees are copies of the same code. Scanning them multiplies every finding by
+  // however many branches someone has checked out - it turned one real report into 3032 lines.
+  ".worktrees",
+  // Vendored and generated code. Somebody else's bootstrap.css is not this product's drift,
+  // and on a real iOS product these four directories alone accounted for 1734 findings.
+  "SourcePackages",
+  "Pods",
+  "Carthage",
+  "vendor",
+  ".build",
+  ".turbo",
+  ".cache",
+  "out",
+  "target",
+  "__snapshots__",
 ]);
+
+/** Xcode writes `DerivedData`, `DerivedData-Sim`, and whatever else someone names a variant. */
+const SKIPPED_PREFIXES = ["DerivedData"];
+
+function skippedDirectory(name: string): boolean {
+  return SKIPPED_DIRECTORIES.has(name) || SKIPPED_PREFIXES.some((p) => name.startsWith(p));
+}
 
 /**
  * Test files are skipped. A test for a design check is full of deliberately wrong values -
@@ -112,6 +135,28 @@ function kebab(property: string): string {
 const SPACING_ALWAYS_FINE = new Set(["0px", "0rem", "1px", "2px", "100px", "100rem"]);
 
 /**
+ * CSS-wide keywords and generic families. `font-family: inherit` is not a font stack, and
+ * flagging it is the kind of finding that gets a check switched off.
+ */
+const FONT_ALWAYS_FINE = new Set([
+  "inherit",
+  "initial",
+  "unset",
+  "revert",
+  "revert-layer",
+  "sans-serif",
+  "serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-monospace",
+  "ui-sans-serif",
+  "ui-serif",
+  "ui-rounded",
+]);
+
+/**
  * Blank out comments, keeping every newline so a reported line number still points at the real
  * line. A colour in a comment is not a use of a colour - this check flagged an example inside
  * its own doc comment before this existed.
@@ -128,11 +173,8 @@ export function stripComments(source: string): string {
 
 function collectFiles(root: string, out: string[] = []): string[] {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") && entry.name !== ".") {
-      if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
-    }
     if (entry.isDirectory()) {
-      if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
+      if (skippedDirectory(entry.name)) continue;
       collectFiles(join(root, entry.name), out);
     } else if (SCANNED_EXTENSIONS.has(extname(entry.name)) && !TEST_FILE.test(entry.name)) {
       out.push(join(root, entry.name));
@@ -158,6 +200,20 @@ export function declaredValues(designText: string): Set<string> {
   for (const match of designText.matchAll(OKLCH)) values.add(normaliseColour(match[0]));
   for (const match of designText.matchAll(SPACING)) values.add(match[0].toLowerCase());
 
+  /*
+   * A bare number counts as declaring that many px and rem.
+   *
+   * Deliberately generous. A perfectly good DESIGN.md writes its scale in points as bare
+   * numbers - `| spaceMd | 16 |` - and a literal `16px` match finds none of them. Run against
+   * a real product that does exactly this, the strict version produced 3032 findings, which
+   * is the same as producing none. A false positive storm gets a check switched off; a false
+   * negative is only a miss.
+   */
+  for (const match of designText.matchAll(/(?<![\w.#-])(\d{1,4})(?![\w.%-])/g)) {
+    values.add(`${match[1]}px`);
+    values.add(`${match[1]}rem`);
+  }
+
   // Font names, whether written in backticks, in a font-family line, or in a table cell.
   for (const match of designText.matchAll(/[`"']([A-Za-z][A-Za-z0-9 ]{2,40})[`"']/g)) {
     values.add(match[1]!.trim().toLowerCase());
@@ -176,6 +232,12 @@ export interface AnchorOptions {
   designPath?: string;
   /** Directories to scan, relative to root. Defaults to the whole tree. */
   include?: string[];
+  /**
+   * Paths whose style is not this loop's problem. `autopilot check-anchor` passes the config's
+   * `boundaries.protectedPaths`: code the loop may never touch cannot be code it is asked to
+   * bring back onto the scale.
+   */
+  exclude?: string[];
 }
 
 export function checkAnchor(options: AnchorOptions): AnchorReport {
@@ -195,7 +257,13 @@ export function checkAnchor(options: AnchorOptions): AnchorReport {
   const declared = declaredValues(readFileSync(designPath, "utf8"));
 
   const roots = (options.include ?? ["."]).map((dir) => join(options.root, dir)).filter(existsSync);
-  const files = roots.flatMap((dir) => (statSync(dir).isDirectory() ? collectFiles(dir) : [dir]));
+  const exclude = options.exclude ?? [];
+  const files = roots
+    .flatMap((dir) => (statSync(dir).isDirectory() ? collectFiles(dir) : [dir]))
+    .filter((file) => {
+      const rel = relative(options.root, file);
+      return !exclude.some((pattern) => matchesPattern(rel, pattern));
+    });
 
   const violations: AnchorViolation[] = [];
 
@@ -216,7 +284,8 @@ export function checkAnchor(options: AnchorOptions): AnchorReport {
 
       for (const match of text.matchAll(FONT_FAMILY)) {
         const first = match[1]!.split(",")[0]!.trim().replace(/^["']|["']$/g, "");
-        if (first.startsWith("var(") || declared.has(first.toLowerCase())) continue;
+        const lower = first.toLowerCase();
+        if (first.startsWith("var(") || FONT_ALWAYS_FINE.has(lower) || declared.has(lower)) continue;
         violations.push({
           ...at,
           value: first,
@@ -252,6 +321,9 @@ export function checkAnchor(options: AnchorOptions): AnchorReport {
   };
 }
 
+/** A report nobody can read is a report nobody acts on. The rest is summarised by file. */
+const MAX_LISTED = 20;
+
 export function formatAnchorReport(report: AnchorReport): string {
   if (report.designMissing) {
     return (
@@ -263,10 +335,32 @@ export function formatAnchorReport(report: AnchorReport): string {
   if (report.violations.length === 0) {
     return `Anchor clean: ${report.filesScanned} files, ${report.declaredValues} values declared in DESIGN.md.`;
   }
-  const lines = report.violations.map((v) => `  ${v.file}:${v.line}  [${v.kind}]  ${v.hint}`);
+  const total = report.violations.length;
+  const shown = report.violations.slice(0, MAX_LISTED);
+  const lines = shown.map((v) => `  ${v.file}:${v.line}  [${v.kind}]  ${v.hint}`);
+
+  const byKind = new Map<ViolationKind, number>();
+  for (const v of report.violations) byKind.set(v.kind, (byKind.get(v.kind) ?? 0) + 1);
+
+  const rest: string[] = [];
+  if (total > MAX_LISTED) {
+    const byFile = new Map<string, number>();
+    for (const v of report.violations.slice(MAX_LISTED)) {
+      byFile.set(v.file, (byFile.get(v.file) ?? 0) + 1);
+    }
+    const worst = [...byFile.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+    rest.push(
+      "",
+      `and ${total - MAX_LISTED} more. The files with the most:`,
+      ...worst.map(([file, count]) => `  ${count.toString().padStart(5)}  ${file}`),
+    );
+  }
+
   return [
-    `${report.violations.length} anchor violation${report.violations.length === 1 ? "" : "s"} in ${report.filesScanned} files:`,
+    `${total} anchor violation${total === 1 ? "" : "s"} in ${report.filesScanned} files ` +
+      `(${[...byKind].map(([kind, count]) => `${count} ${kind}`).join(", ")}):`,
     ...lines,
+    ...rest,
     "",
     "Each one is a value the anchor never declared. docs/coherence.md rule 2: extend the",
     "anchor in the same change that uses it, or it does not exist.",

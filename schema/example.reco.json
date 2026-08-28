@@ -18,8 +18,7 @@
   },
   "environments": {
     "staging": {
-      "deploy": "bash ios/package-ios.sh",
-      "url": "testflight://reco"
+      "deploy": "RECOMP_ALLOW_PHYSICAL_IPAD=1 INSTALL_DEVICE=ipad bash ios/package-ios.sh"
     },
     "production": {
       "deploy": "bash ios/release.sh",
@@ -27,12 +26,7 @@
     }
   },
   "gate": {
-    "commands": [
-      "pnpm lint",
-      "pnpm typecheck",
-      "pnpm test",
-      "xcodebuild test -scheme Reco -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'"
-    ],
+    "commands": ["npm run lint", "npx tsc --noEmit", "npm test"],
     "featureFlags": { "required": true, "defaultState": "off" }
   },
   "capture": {
@@ -40,7 +34,13 @@
     "conversational": true
   },
   "boundaries": {
-    "protectedPaths": ["ios/Secrets/", ".env*", "fastlane/match/"],
+    "protectedPaths": [
+      "ios/Secrets/",
+      ".env*",
+      "fastlane/match/",
+      "public/pdfjs/",
+      "ios/DerivedData*/"
+    ],
     "forbiddenCommands": ["git push --force", "rm -rf"],
     "maxTicketsInFlight": 1
   },
