@@ -240,7 +240,29 @@ async function main(argv: string[]): Promise<number> {
         }
 
         const input = isSay ? { text } : { bundles: bundlesFrom(config, positionals[1]) };
-        const result = await runTriage({ config, tracker, agent, input, ...(dryRun ? { dryRun: true } : {}) });
+
+        // A bundle read off disk goes into the store first. `put` is idempotent on the
+        // device-generated id, so this costs nothing on a repeat and is what lets the ack
+        // make a re-run a no-op instead of a duplicate.
+        if (!isSay && !dryRun) {
+          for (const bundle of input.bundles ?? []) store.put(bundle);
+        }
+
+        const result = await runTriage({
+          config,
+          tracker,
+          agent,
+          input,
+          store,
+          ...(dryRun ? { dryRun: true } : {}),
+        });
+
+        if (result.alreadyTriaged.length > 0) {
+          process.stdout.write(
+            `Already triaged and drained, so nothing was filed again: ${result.alreadyTriaged.join(", ")}\n`,
+          );
+          if (result.created.length === 0) return EXIT.nothing;
+        }
 
         for (const ticket of result.created) {
           process.stdout.write(`${ticket.id}  [${ticket.lane}, p${ticket.priority}]  ${ticket.title}\n`);

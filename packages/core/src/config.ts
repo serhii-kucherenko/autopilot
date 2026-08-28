@@ -82,8 +82,29 @@ export function parseConfig(raw: unknown): Config {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new ConfigError("autopilot.config.json must be a JSON object");
   }
-  validate(raw);
   const r = raw as Raw;
+
+  /*
+   * `maxTicketsInFlight` above 1 is refused rather than ignored, and checked before schema
+   * validation so this explanation reaches the reader instead of ajv's bare `maximum` error.
+   *
+   * `integrations/README.md` said the cap was respected and it was not: the loop is a single
+   * sequential runner and `pickNext` resumes a started ticket before starting a new one, so the
+   * count in flight is structurally 1 and nothing ever read the field. A config value the docs
+   * promise and the code ignores is worse than an unsupported one. Raising it needs a worker
+   * pool, which nobody has asked for.
+   */
+  const askedInFlight = (r.boundaries as Raw | undefined)?.maxTicketsInFlight;
+  if (typeof askedInFlight === "number" && askedInFlight > 1) {
+    throw new ConfigError(
+      `boundaries.maxTicketsInFlight is ${askedInFlight}, and only 1 is implemented. ` +
+        "The loop is sequential: it resumes a started ticket before beginning another, so a " +
+        "higher cap would be silently ignored rather than honoured. Run more products, or " +
+        "more loops against different projects, to get parallelism today.",
+    );
+  }
+
+  validate(raw);
 
   const product = section(r, "product");
   const tracker = section(r, "tracker");

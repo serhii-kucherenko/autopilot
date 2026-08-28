@@ -80,10 +80,10 @@ export function inFlight(tickets: Ticket[]): Ticket[] {
  *    resumes rather than doubling up;
  * 2. otherwise the top unblocked ticket by priority, oldest first on a tie.
  *
- * `boundaries.maxTicketsInFlight` is deliberately not a parameter here. Resume-first
- * already means one runner never opens a second ticket, so passing the cap in would be a
- * check that can never fire. The cap belongs where concurrent workers are actually
- * started; `inFlight()` and `atCapacity()` are what that code uses.
+ * `boundaries.maxTicketsInFlight` is deliberately not a parameter here. Resume-first already
+ * means one sequential runner never opens a second ticket, so passing the cap in would be a
+ * check that can never fire - and `config.ts` refuses a cap above 1 for the same reason,
+ * rather than accepting a number nothing reads.
  */
 export function pickNext(tickets: Ticket[]): Ticket | undefined {
   const open = tickets.filter(isOpen);
@@ -99,13 +99,6 @@ export function pickNext(tickets: Ticket[]): Ticket | undefined {
     )[0];
 }
 
-/**
- * Whether the loop may start another ticket. ponytail: only ever consulted with the
- * documented default of 1 today; it is what a parallel worker pool would gate on.
- */
-export function atCapacity(tickets: Ticket[], maxTicketsInFlight: number): boolean {
-  return inFlight(tickets.filter(isOpen)).length >= maxTicketsInFlight;
-}
 
 /* ------------------------------------------------------------------ FileTracker */
 

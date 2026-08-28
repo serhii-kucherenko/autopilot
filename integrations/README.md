@@ -41,7 +41,13 @@ the release workflow must require a manual approval, not merely a protected bran
 Whatever wakes the loop on a cadence. It must be idempotent: waking twice while a ticket is
 in flight must not start it twice. The lock is the ticket state in Linear, not a local file.
 
-On an empty backlog it runs `prompts/self-audit.md` rather than idling.
+On an empty backlog it runs `prompts/self-audit.md` rather than idling. It also enforces
+retention on every wake, because it is the only scheduled thing in the system.
+
+`boundaries.maxTicketsInFlight` is 1, and only 1 is implemented: the loop is sequential and
+resumes a started ticket before beginning another, so the count in flight is structurally 1.
+A config asking for more is refused rather than silently ignored. Parallelism comes from
+running more products, as `docs/architecture.md` says.
 
 ## Loupe - the capture side
 

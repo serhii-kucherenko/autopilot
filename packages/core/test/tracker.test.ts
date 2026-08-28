@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FileTracker, LinearTracker, pickNext, atCapacity, inFlight, type Ticket } from "../src/tracker.ts";
+import { FileTracker, LinearTracker, pickNext, inFlight, type Ticket } from "../src/tracker.ts";
 
 function tracker() {
   return new FileTracker(join(mkdtempSync(join(tmpdir(), "ap-track-")), "tickets.json"));
@@ -118,12 +118,11 @@ test("a running ticket is picked regardless of where it sits in the list", () =>
   assert.deepEqual(inFlight(all).map((t) => t.id), ["SER-a", "SER-b"]);
 });
 
-test("atCapacity counts only what is running, and ignores finished work", () => {
+test("inFlight counts only what is running, and ignores finished work", () => {
   const running = ticket({ id: "SER-a", stateType: "started", state: "In Progress" });
   const done = ticket({ id: "SER-z", stateType: "completed", state: "Done" });
-  assert.equal(atCapacity([running, done], 1), true);
-  assert.equal(atCapacity([running, done], 2), false);
-  assert.equal(atCapacity([done], 1), false);
+  assert.deepEqual(inFlight([running, done]).map((t) => t.id), ["SER-a"]);
+  assert.deepEqual(inFlight([done]), []);
 });
 
 test("an empty backlog returns nothing, which is what triggers the self-audit", () => {
