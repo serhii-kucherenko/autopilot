@@ -21,7 +21,7 @@ import { readBundleDir, listBundleDirs, parseBundleJSON, type Bundle } from "./b
 import { runTriage } from "./triage.ts";
 import { runEngineer } from "./engineer.ts";
 import { runSelfAudit } from "./selfaudit.ts";
-import { runDigest, plainDigest } from "./digest.ts";
+import { runDigest, plainDigest, coherenceOf } from "./digest.ts";
 import { runRelease } from "./release.ts";
 import { runLoop } from "./loop.ts";
 import { checkAnchor, formatAnchorReport } from "./anchor.ts";
@@ -292,13 +292,18 @@ async function main(argv: string[]): Promise<number> {
 
       case "digest": {
         if (options.plain) {
-          const text = plainDigest(store.undigestedRuns(), await tracker.listOpen(), config);
+          const runs = store.undigestedRuns();
+          const coherence = coherenceOf(config, store.undigestedSignals());
+          const text = plainDigest(runs, await tracker.listOpen(), config, coherence);
           if (!text) {
             process.stdout.write("Nothing landed on staging. Silence is correct.\n");
             return EXIT.nothing;
           }
           process.stdout.write(`${text}\n`);
-          if (!dryRun) store.markDigested(store.undigestedRuns().map((r) => r.ticketId));
+          if (!dryRun) {
+            store.markDigested(runs.map((r) => r.ticketId));
+            store.markSignalsDigested();
+          }
           return EXIT.did;
         }
         const result = await runDigest({ config, tracker, agent, store, ...(dryRun ? { dryRun: true } : {}) });

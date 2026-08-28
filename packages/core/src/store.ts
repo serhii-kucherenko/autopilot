@@ -27,6 +27,23 @@ export interface Approval {
   approvedAt?: string;
 }
 
+/**
+ * Something the loop hit that was not a clean ship. `docs/coherence.md` names two numbers as
+ * the falsification test for the whole anchor bet, and `conflict` is the first of them:
+ *
+ * > If tickets keep stopping on anchor conflicts, the anchor is over-specified.
+ *
+ * The second - drift the anchor should have caught - is what `checkAnchor` counts.
+ */
+export type SignalKind = "conflict" | "blocked" | "gate-failed" | "out-of-bounds" | "agent-failed";
+
+export interface Signal {
+  kind: SignalKind;
+  ticketId: string;
+  detail?: string;
+  at?: string;
+}
+
 export interface StagedRun {
   ticketId: string;
   commitSHA: string;
@@ -55,6 +72,18 @@ CREATE TABLE IF NOT EXISTS approvals (
   approved_at TEXT NOT NULL,
   PRIMARY KEY (ticket_id, commit_sha)
 );
+
+-- The falsification data for docs/coherence.md's design bet. Every engineer outcome that is
+-- not a clean ship lands here, so the digest can report how often the anchor stopped a ticket.
+CREATE TABLE IF NOT EXISTS signals (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL,
+  ticket_id   TEXT NOT NULL,
+  at          TEXT NOT NULL,
+  detail      TEXT,
+  digested_at TEXT
+);
+CREATE INDEX IF NOT EXISTS signals_undigested ON signals (digested_at, at);
 
 CREATE TABLE IF NOT EXISTS runs (
   ticket_id   TEXT PRIMARY KEY,
@@ -261,6 +290,33 @@ export class Store {
   markDigested(ticketIds: string[], at = new Date().toISOString()): void {
     const update = this.db.prepare("UPDATE runs SET digested_at = ? WHERE ticket_id = ?");
     for (const id of ticketIds) update.run(at, id);
+  }
+
+  recordSignal(signal: Signal): void {
+    this.db
+      .prepare("INSERT INTO signals (kind, ticket_id, at, detail) VALUES (?, ?, ?, ?)")
+      .run(signal.kind, signal.ticketId, signal.at ?? new Date().toISOString(), signal.detail ?? null);
+  }
+
+  /** Everything the loop hit since the last digest. */
+  undigestedSignals(): Signal[] {
+    return (
+      this.db
+        .prepare("SELECT * FROM signals WHERE digested_at IS NULL ORDER BY at ASC, id ASC")
+        .all() as Record<string, unknown>[]
+    ).map((r) => {
+      const signal: Signal = {
+        kind: r.kind as SignalKind,
+        ticketId: r.ticket_id as string,
+        at: r.at as string,
+      };
+      if (r.detail) signal.detail = r.detail as string;
+      return signal;
+    });
+  }
+
+  markSignalsDigested(at = new Date().toISOString()): void {
+    this.db.prepare("UPDATE signals SET digested_at = ? WHERE digested_at IS NULL").run(at);
   }
 
   close(): void {

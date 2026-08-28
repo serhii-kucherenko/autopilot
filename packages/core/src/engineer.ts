@@ -22,6 +22,7 @@ import { assertDiffInBounds, protectedViolations } from "./boundaries.ts";
 import { runGate, runCommand, summariseGate, type GateResult } from "./gate.ts";
 import type { Store } from "./store.ts";
 import { outputContract, parseReply, requireString, optionalString } from "./reply.ts";
+import type { SignalKind } from "./store.ts";
 
 const ENGINEER_SHAPE = `
 {
@@ -42,6 +43,23 @@ export type EngineerStatus =
   | "no-change"
   | "agent-failed"
   | "out-of-bounds";
+
+/**
+ * Outcomes worth counting for `docs/coherence.md`. `shipped` is the happy path and
+ * `no-change` is a nothing, so neither is a signal. The explicit `Extract` means adding a
+ * status without deciding whether it is a signal will not compile.
+ */
+const SIGNAL_STATUSES: Extract<EngineerStatus, SignalKind>[] = [
+  "conflict",
+  "blocked",
+  "gate-failed",
+  "out-of-bounds",
+  "agent-failed",
+];
+
+function signalKind(status: EngineerStatus): SignalKind | undefined {
+  return SIGNAL_STATUSES.find((s) => s === status);
+}
 
 export interface EngineerOutcome {
   status: EngineerStatus;
@@ -95,14 +113,13 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   const flag = flagNameFor(ticket.id);
   const base = config.repo.defaultBranch;
 
-  const fail = (status: EngineerStatus, summary: string, detail: string): EngineerOutcome => ({
-    status,
-    ticketId: ticket.id,
-    summary,
-    branch,
-    flag,
-    detail,
-  });
+  const fail = (status: EngineerStatus, summary: string, detail: string): EngineerOutcome => {
+    // Recorded, not just returned: docs/coherence.md's bet is only falsifiable if somebody
+    // counts how often the anchor stops a ticket, and the digest is where that lands.
+    const kind = signalKind(status);
+    if (kind) options.store?.recordSignal({ kind, ticketId: ticket.id, detail });
+    return { status, ticketId: ticket.id, summary, branch, flag, detail };
+  };
 
   if (!git.isRepo()) {
     return fail("blocked", "the product repo is not a git repository", `no git repo at ${config.repo.root}`);

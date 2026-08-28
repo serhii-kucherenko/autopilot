@@ -10,9 +10,10 @@ import { FileTracker } from "../src/tracker.ts";
 import { Store } from "../src/store.ts";
 import { Git } from "../src/git.ts";
 import { runSelfAudit, MAX_FINDINGS_PER_AUDIT } from "../src/selfaudit.ts";
-import { runDigest, plainDigest } from "../src/digest.ts";
+import { runDigest, plainDigest, describeCoherence } from "../src/digest.ts";
 import { runRelease, pressProduction } from "../src/release.ts";
 import { runLoop } from "../src/loop.ts";
+import { runEngineer } from "../src/engineer.ts";
 import { ReplyError } from "../src/reply.ts";
 
 function productRepo(): string {
@@ -345,4 +346,106 @@ test("two cycles in a row work two tickets, because a shipped ticket is done", a
 
   assert.deepEqual(report.cycles.map((c) => c.engineer?.status), ["shipped", "shipped"]);
   assert.deepEqual(report.cycles.map((c) => c.engineer?.ticketId), ["AP-1", "AP-2"]);
+});
+
+/* -------------------------------------------------------------------- coherence */
+
+test("a conflicted ticket is counted, so the anchor bet can be falsified", async () => {
+  const root = productRepo();
+  const t = tracker();
+  const s = store();
+  const created = await t.create({ title: "a", description: "", lane: "ai", priority: 2 });
+
+  await runEngineer({
+    config: config(root),
+    tracker: t,
+    store: s,
+    agent: new FakeAgent([
+      reply({ outcome: "conflict", summary: "cannot do this", conflict: "DESIGN.md has no token for it" }),
+    ]),
+    ticket: created,
+  });
+
+  const signals = s.undigestedSignals();
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0]!.kind, "conflict");
+  assert.equal(signals[0]!.ticketId, created.id);
+  s.close();
+});
+
+test("a clean ship records no signal, because shipping is not a finding", async () => {
+  const root = productRepo();
+  const t = tracker();
+  const s = store();
+  const created = await t.create({ title: "a", description: "", lane: "ai", priority: 2 });
+
+  await runEngineer({
+    config: config(root),
+    tracker: t,
+    store: s,
+    agent: new FakeAgent([shipsCode("flag_ap_1")]),
+    ticket: created,
+  });
+
+  assert.deepEqual(s.undigestedSignals(), []);
+  s.close();
+});
+
+test("the digest reports both coherence numbers and names the over-specified signal", async () => {
+  const root = productRepo();
+  const s = store();
+  const cfg = config(root);
+  s.recordRun({ ticketId: "AP-1", commitSHA: "aaa", branch: "b", flag: "f", summary: "s" });
+  for (const id of ["AP-2", "AP-3", "AP-4"]) {
+    s.recordSignal({ kind: "conflict", ticketId: id, detail: "the anchor forbids it" });
+  }
+
+  const agent = new FakeAgent(["## Shipped\n\nsomething"]);
+  const result = await runDigest({ config: cfg, tracker: tracker(), agent, store: s });
+
+  assert.equal(result.coherence?.conflicts, 3);
+  assert.equal(result.coherence?.anchorExists, false, "the test product has no DESIGN.md");
+
+  const prompt = agent.requests[0]!.prompt;
+  assert.match(prompt, /## Coherence/);
+  assert.match(prompt, /AP-2 \[conflict\]/);
+  assert.match(prompt, /A conflict is a decision for the human/);
+
+  assert.deepEqual(s.undigestedSignals(), [], "a digested signal is not reported twice");
+  s.close();
+});
+
+test("a batch of nothing but failures is not a quiet day", async () => {
+  const s = store();
+  s.recordSignal({ kind: "gate-failed", ticketId: "AP-1", detail: "the suite fails" });
+  const agent = new FakeAgent(["## Did not ship\n\nAP-1"]);
+
+  const result = await runDigest({ config: config(productRepo()), tracker: tracker(), agent, store: s });
+
+  assert.equal(result.silent, false, "a loop stuck on a failing gate must not go unreported");
+  assert.match(agent.requests[0]!.prompt, /AP-1 \[gate-failed\]/);
+  s.close();
+});
+
+test("the coherence numbers mean nothing without a DESIGN.md, and it says so", () => {
+  assert.match(
+    describeCoherence({ conflicts: 0, anchorViolations: 0, anchorExists: false, signals: [] }),
+    /no anchor and nothing to measure/,
+  );
+  assert.match(
+    describeCoherence({ conflicts: 1, anchorViolations: 2, anchorExists: true, signals: [] }),
+    /stopped on an anchor conflict: 1.*never declared: 2/s,
+  );
+});
+
+test("a conflict is named in the plain digest, not only counted", () => {
+  const cfg = config(productRepo());
+  const text = plainDigest([], [], cfg, {
+    conflicts: 1,
+    anchorViolations: 0,
+    anchorExists: true,
+    signals: [{ kind: "conflict", ticketId: "AP-2", detail: "the vision refuses a feed", at: "2026-08-28T00:00:00Z" }],
+  });
+  assert.match(text, /AP-2 \[conflict\] the vision refuses a feed/);
+  assert.match(text, /stopped on an anchor conflict: 1/);
 });

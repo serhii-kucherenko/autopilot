@@ -7,7 +7,7 @@
  */
 
 import Link from "next/link";
-import { plainDigest } from "@autopilot/core";
+import { plainDigest, coherenceOf, describeCoherence } from "@autopilot/core";
 import { config, openStore, openTickets } from "../../lib/server.ts";
 import { Chip } from "../../components/Chip.tsx";
 import { PressButton } from "../../components/PressButton.tsx";
@@ -19,7 +19,9 @@ export default async function DigestPage() {
   const cfg = config();
   const store = openStore();
   const runs = store.undigestedRuns();
+  const signals = store.undigestedSignals();
   store.close();
+  const coherence = coherenceOf(cfg, signals);
   const { tickets, error } = await openTickets(cfg);
 
   const needsYou = tickets.filter((t) => t.lane === "human" && t.stateType !== "completed");
@@ -125,6 +127,42 @@ export default async function DigestPage() {
         </section>
       ) : null}
 
+      {signals.length > 0 ? (
+        <section className="card digest" style={{ marginTop: "var(--space-lg)" }}>
+          <h2>Did not ship</h2>
+          <p className="press__note">
+            A conflict is a decision for you, not a failure. The loop stopped rather than
+            quietly picking a side.
+          </p>
+          <ul className="rows" style={{ marginTop: "var(--space-md)" }}>
+            {signals.map((signal) => (
+              <li key={`${signal.kind}-${signal.ticketId}-${signal.at}`}>
+                <Link className="row" href={`/tickets/${encodeURIComponent(signal.ticketId)}`}>
+                  <div className="row__top">
+                    <span className="row__id">{signal.ticketId}</span>
+                    <span className="row__title">{signal.detail?.split("\n")[0] ?? signal.kind}</span>
+                    <Chip status={signal.kind === "conflict" ? "attention" : "danger"}>
+                      {signal.kind}
+                    </Chip>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="card digest" style={{ marginTop: "var(--space-lg)" }}>
+        <h2>Coherence</h2>
+        <p className="press__note">{describeCoherence(coherence)}</p>
+        <p className="press__note" style={{ marginTop: "var(--space-xs)" }}>
+          These are the two numbers <span className="mono">docs/coherence.md</span> names as the
+          falsification test for the whole anchor bet. Lots of conflicts means the anchor is
+          over-specified; drift you keep finding that these numbers missed means it is
+          under-specified.
+        </p>
+      </section>
+
       <section className="card digest" style={{ marginTop: "var(--space-lg)" }}>
         <h2>The same thing, without a model</h2>
         <p className="press__note">
@@ -136,7 +174,7 @@ export default async function DigestPage() {
             <span className="label">autopilot digest --plain</span>
           </div>
           <div className="graphite__body">
-            <pre>{plainDigest(runs, tickets, cfg)}</pre>
+            <pre>{plainDigest(runs, tickets, cfg, coherence)}</pre>
           </div>
         </div>
       </section>

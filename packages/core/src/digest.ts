@@ -15,13 +15,65 @@ import type { Config } from "./config.ts";
 import type { AgentRunner } from "./agent.ts";
 import { loadPrompt } from "./agent.ts";
 import type { Ticket, Tracker } from "./tracker.ts";
-import type { StagedRun, Store } from "./store.ts";
+import type { Signal, StagedRun, Store } from "./store.ts";
+import { checkAnchor } from "./anchor.ts";
+
+/**
+ * The two numbers `docs/coherence.md` names as the falsification test for the anchor bet:
+ *
+ * > If tickets keep stopping on anchor conflicts, the anchor is over-specified.
+ * > If the human review keeps finding drift the anchor should have caught, the anchor is
+ * > under-specified.
+ *
+ * `conflicts` is the first. `anchorViolations` is the second, inverted: it is the drift the
+ * anchor *did* catch mechanically, so a rising human-found-drift count against a zero here
+ * is what says the anchor is under-specified.
+ */
+export interface Coherence {
+  conflicts: number;
+  anchorViolations: number;
+  /** False when the product has no DESIGN.md at all, which makes both numbers meaningless. */
+  anchorExists: boolean;
+  /** Every outcome that was not a clean ship, conflicts included. */
+  signals: Signal[];
+}
+
+export function coherenceOf(config: Config, signals: Signal[]): Coherence {
+  const anchor = checkAnchor({ root: config.repo.root });
+  return {
+    conflicts: signals.filter((s) => s.kind === "conflict").length,
+    anchorViolations: anchor.violations.length,
+    anchorExists: !anchor.designMissing,
+    signals,
+  };
+}
+
+export function describeCoherence(coherence: Coherence): string {
+  if (!coherence.anchorExists) {
+    return "No DESIGN.md in this product, so there is no anchor and nothing to measure. That is the finding.";
+  }
+  const lines = [
+    `Tickets stopped on an anchor conflict: ${coherence.conflicts}.`,
+    `Values in the code that DESIGN.md never declared: ${coherence.anchorViolations}.`,
+  ];
+  if (coherence.conflicts >= 3) {
+    lines.push(
+      "Three or more conflicts in one batch is the over-specified signal from docs/coherence.md. " +
+        "Worth asking which rule is fighting the work.",
+    );
+  }
+  if (coherence.anchorViolations > 0) {
+    lines.push("Run `autopilot check-anchor` for the file and line of each one.");
+  }
+  return lines.join(" ");
+}
 
 export interface DigestResult {
   /** True when there was genuinely nothing to say. `message` is empty and no agent ran. */
   silent: boolean;
   message: string;
   covered: string[];
+  coherence?: Coherence;
 }
 
 export interface DigestOptions {
@@ -63,13 +115,20 @@ function describeQueue(open: Ticket[]): string {
 export async function runDigest(options: DigestOptions): Promise<DigestResult> {
   const { config, tracker, agent, store } = options;
   const runs = store.undigestedRuns();
+  const signals = store.undigestedSignals();
   const open = await tracker.listOpen();
 
   // prompts/digest.md: "Be silent when nothing changed. An empty digest on a quiet day is
   // correct. A ritual message nobody needs is how this gets ignored."
-  if (runs.length === 0) {
+  //
+  // A batch of nothing but failures is not a quiet day, though, so signals break the silence
+  // too - otherwise a loop stuck on one failing gate would go unreported for as long as it
+  // kept failing.
+  if (runs.length === 0 && signals.length === 0) {
     return { silent: true, message: "", covered: [] };
   }
+
+  const coherence = coherenceOf(config, signals);
 
   const prompt = [
     loadPrompt("digest"),
@@ -78,6 +137,17 @@ export async function runDigest(options: DigestOptions): Promise<DigestResult> {
     "---",
     "## What shipped to staging since the last digest",
     describeRuns(runs),
+    "---",
+    "## What the loop hit and did not ship",
+    signals.length === 0
+      ? "Nothing. Every ticket in this batch went through cleanly."
+      : signals
+          .map((s) => `- ${s.ticketId} [${s.kind}] ${s.detail?.split("\n")[0] ?? ""}`)
+          .join("\n"),
+    "---",
+    "## Coherence",
+    describeCoherence(coherence),
+    "A conflict is a decision for the human, not a failure. Put each one under \"Decisions for you\" with your recommendation.",
     "---",
     "## The queue",
     describeQueue(open),
@@ -95,7 +165,7 @@ export async function runDigest(options: DigestOptions): Promise<DigestResult> {
   ].join("\n\n");
 
   if (options.dryRun) {
-    return { silent: false, message: prompt, covered: runs.map((r) => r.ticketId) };
+    return { silent: false, message: prompt, covered: runs.map((r) => r.ticketId), coherence };
   }
 
   const result = await agent.run({
@@ -111,15 +181,21 @@ export async function runDigest(options: DigestOptions): Promise<DigestResult> {
 
   const covered = runs.map((r) => r.ticketId);
   store.markDigested(covered);
-  return { silent: false, message: result.text.trim(), covered };
+  store.markSignalsDigested();
+  return { silent: false, message: result.text.trim(), covered, coherence };
 }
 
 /**
  * The plain-text digest, with no model involved. `autopilot digest --plain` uses it, and so
  * does anything that needs the facts without waiting on an agent.
  */
-export function plainDigest(runs: StagedRun[], open: Ticket[], config: Config): string {
-  if (runs.length === 0) return "";
+export function plainDigest(
+  runs: StagedRun[],
+  open: Ticket[],
+  config: Config,
+  coherence?: Coherence,
+): string {
+  if (runs.length === 0 && !coherence?.signals.length) return "";
   return [
     `# ${config.product.name} - what landed on staging`,
     "",
@@ -131,6 +207,18 @@ export function plainDigest(runs: StagedRun[], open: Ticket[], config: Config): 
     ...(runs.some((r) => r.unsure)
       ? ["", "## Needs your eyes", ...runs.filter((r) => r.unsure).map((r) => `- ${r.ticketId}: ${r.unsure}`)]
       : []),
+    ...(coherence?.signals.length
+      ? [
+          "",
+          "## Did not ship",
+          // A conflict is named, not just counted: it is a decision waiting on the human,
+          // which makes it the most actionable line in the whole message.
+          ...coherence.signals.map(
+            (s) => `- ${s.ticketId} [${s.kind}] ${s.detail?.split("\n")[0] ?? ""}`.trimEnd(),
+          ),
+        ]
+      : []),
+    ...(coherence ? ["", "## Coherence", describeCoherence(coherence)] : []),
     "",
     "## Queue",
     describeQueue(open),
