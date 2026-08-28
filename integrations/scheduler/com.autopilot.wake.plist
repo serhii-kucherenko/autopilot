@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A launchd agent that wakes Autopilot on a cadence.
+
+  Copy this to ~/Library/LaunchAgents/com.autopilot.wake.plist, replace every ALL_CAPS
+  placeholder with a real absolute path, then follow integrations/scheduler/README.md.
+
+  Everything in here is absolute on purpose. launchd does not read a shell profile, so a
+  relative path, a `node` found on PATH, or an exported LINEAR_API_KEY all work when you test
+  by hand and all fail at 3am. That is the single most common way this file goes wrong.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.autopilot.wake</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>ABSOLUTE_PATH_TO_NODE</string>
+    <string>--experimental-strip-types</string>
+    <string>ABSOLUTE_PATH_TO_AUTOPILOT/packages/core/src/cli.ts</string>
+    <string>wake</string>
+    <string>--config</string>
+    <string>ABSOLUTE_PATH_TO_THE_PRODUCT/autopilot.config.json</string>
+  </array>
+
+  <!-- The store and the product repo are resolved from here. -->
+  <key>WorkingDirectory</key>
+  <string>ABSOLUTE_PATH_TO_AUTOPILOT</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd gives a near-empty PATH. The gate shells out to git, pnpm and node. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LINEAR_API_KEY</key>
+    <string>PUT_THE_KEY_HERE</string>
+  </dict>
+
+  <!--
+    Every four hours. A wake does one cycle and stops, so the cadence is how often work moves,
+    not how long it runs. Waking twice while a ticket is in flight is safe: the lock is the
+    ticket state in the tracker, and the loop resumes a started ticket rather than starting a
+    second one.
+  -->
+  <key>StartInterval</key>
+  <integer>14400</integer>
+
+  <!-- Without these, everything the wake prints is discarded, including the digest. -->
+  <key>StandardOutPath</key>
+  <string>ABSOLUTE_PATH_TO_AUTOPILOT/.autopilot/wake.log</string>
+  <key>StandardErrorPath</key>
+  <string>ABSOLUTE_PATH_TO_AUTOPILOT/.autopilot/wake.log</string>
+
+  <!-- Do not fire on load. A scheduler that runs the moment you install it gives you no
+       chance to read the log first. -->
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

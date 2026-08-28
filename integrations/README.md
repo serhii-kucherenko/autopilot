@@ -38,6 +38,10 @@ the release workflow must require a manual approval, not merely a protected bran
 
 ## Scheduler - the continuity engine
 
+**Shipped: [`integrations/scheduler/`](scheduler/README.md)** - the `autopilot wake` command, a
+launchd template and the install runbook. This section had described a scheduler for as long as
+the folder held nothing but this file; `wake` is the one command it calls.
+
 Whatever wakes the loop on a cadence. It must be idempotent: waking twice while a ticket is
 in flight must not start it twice. The lock is the ticket state in Linear, not a local file.
 

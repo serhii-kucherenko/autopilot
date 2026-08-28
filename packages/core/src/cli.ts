@@ -41,6 +41,7 @@ const COMMANDS = new Set([
   "say",
   "engineer",
   "loop",
+  "wake",
   "audit",
   "digest",
   "release",
@@ -59,6 +60,7 @@ Commands
   say "<text>"           conversational capture: the same triage, from a sentence
   engineer <ticket>      run one ticket end to end, to staging behind a flag
   loop                   the continuity engine: next unblocked ticket, self-audit when empty
+  wake                   one cycle then the digest. The single command a scheduler calls
   audit                  run the self-audit now, without waiting for an empty backlog
   digest                 write the digest of what landed on staging
   release <ticket>       deploy production. Refuses without a human approval for this commit
@@ -345,6 +347,57 @@ async function main(argv: string[]): Promise<number> {
             `pruned ${report.pruned} acked bundle${report.pruned === 1 ? "" : "s"} past ${config.cadence.retentionDays} days\n`,
           );
         }
+        return report.exitCode;
+      }
+
+      /*
+       * `wake` exists so a scheduler needs no shell.
+       *
+       * `integrations/README.md` has always had a Scheduler box and the folder has always held
+       * only a README. Anyone wiring this up had to call `loop` then `digest` and decide what
+       * to do with two exit codes, which is a wrapper script every user would write once and
+       * get subtly wrong. One command, one exit code, no glue.
+       *
+       * The digest runs even when the cycle failed. A failed run is the case a person most
+       * needs told about, so suppressing the message on failure would hide exactly the wake
+       * worth reading.
+       */
+      case "wake": {
+        const report = await runLoop({
+          config,
+          tracker,
+          agent,
+          store,
+          maxCycles: 1,
+          ...(dryRun ? { dryRun: true } : {}),
+          onCycle: (cycle) => process.stdout.write(`${cycle.message}\n`),
+        });
+        if (report.pruned > 0) {
+          process.stdout.write(
+            `pruned ${report.pruned} acked bundle${report.pruned === 1 ? "" : "s"} past ${config.cadence.retentionDays} days\n`,
+          );
+        }
+
+        const runs = store.undigestedRuns();
+        if (options.plain) {
+          const text = plainDigest(runs, await tracker.listOpen(), config, coherenceOf(config, store.undigestedSignals()));
+          if (!text) {
+            process.stdout.write("Nothing landed on staging. Silence is correct.\n");
+          } else {
+            process.stdout.write(`\n${text}\n`);
+            if (!dryRun) {
+              store.markDigested(runs.map((r) => r.ticketId));
+              store.markSignalsDigested();
+            }
+          }
+        } else {
+          const digest = await runDigest({ config, tracker, agent, store, ...(dryRun ? { dryRun: true } : {}) });
+          process.stdout.write(
+            digest.silent ? "Nothing landed on staging. Silence is correct.\n" : `\n${digest.message}\n`,
+          );
+        }
+
+        // The loop's own code, unchanged: a scheduler reads this and nothing else.
         return report.exitCode;
       }
 

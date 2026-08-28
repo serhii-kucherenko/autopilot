@@ -1,0 +1,65 @@
+{
+  "$schema": "./schema/autopilot.config.schema.json",
+  "product": {
+    "name": "Autopilot",
+    "vision": "docs/vision.md",
+    "anchors": [
+      "DESIGN.md",
+      "CONTEXT.md",
+      "docs/adr/",
+      "docs/vision.md"
+    ]
+  },
+  "repo": {
+    "root": ".",
+    "defaultBranch": "main",
+    "branchPrefix": "auto/"
+  },
+  "tracker": {
+    "kind": "linear",
+    "project": "Autopilot",
+    "team": "Core Team",
+    "laneLabels": {
+      "ai": "lane:ai",
+      "human": "lane:human"
+    }
+  },
+  "gate": {
+    "commands": [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm check-anchor"
+    ],
+    "featureFlags": {
+      "required": false,
+      "defaultState": "off"
+    }
+  },
+  "environments": {
+    "staging": {
+      "deploy": "pnpm build"
+    },
+    "production": {
+      "deploy": "echo 'Autopilot has no production deploy'",
+      "requiresHumanApproval": true
+    }
+  },
+  "boundaries": {
+    "protectedPaths": [
+      "**/.env*",
+      ".github/workflows/**",
+      "schema/**"
+    ],
+    "forbiddenCommands": [
+      "rm -rf",
+      "git push --force",
+      "git reset --hard"
+    ],
+    "maxTicketsInFlight": 1
+  },
+  "cadence": {
+    "selfAuditOnEmptyBacklog": true,
+    "retentionDays": 30
+  }
+}
