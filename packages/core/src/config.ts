@@ -46,6 +46,7 @@ export interface Config {
     engineerInterval?: string;
     digest?: string;
     selfAuditOnEmptyBacklog: boolean;
+    retentionDays: number;
   };
 }
 
@@ -149,6 +150,7 @@ export function parseConfig(raw: unknown): Config {
     },
     cadence: {
       selfAuditOnEmptyBacklog: (cadence.selfAuditOnEmptyBacklog as boolean | undefined) ?? true,
+      retentionDays: (cadence.retentionDays as number | undefined) ?? 30,
     },
   };
 

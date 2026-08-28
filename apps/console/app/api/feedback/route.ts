@@ -11,7 +11,7 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { storeRoot } from "../../../lib/server.ts";
+import { consoleAuthorised, storeRoot } from "../../../lib/server.ts";
 
 export interface FeedbackLine {
   at: string;
@@ -20,6 +20,11 @@ export interface FeedbackLine {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // An unauthenticated append-only write is an unbounded file somebody else fills, and it
+  // feeds `autopilot say`.
+  const auth = consoleAuthorised(request);
+  if (!auth.ok) return Response.json({ error: auth.why }, { status: 401 });
+
   let body: { text?: unknown; about?: unknown };
   try {
     body = (await request.json()) as typeof body;

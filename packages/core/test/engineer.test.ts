@@ -10,6 +10,7 @@ import { FakeAgent, type FakeStep } from "../src/agent.ts";
 import { FileTracker, type Ticket } from "../src/tracker.ts";
 import { Git } from "../src/git.ts";
 import { Store } from "../src/store.ts";
+import { pressProduction } from "../src/release.ts";
 
 /** A real git repo with one commit, so the runner exercises real branching and merging. */
 function productRepo(): string {
@@ -286,4 +287,91 @@ test("a second run on the same ticket resumes its branch instead of failing", as
   });
   assert.equal(second.status, "shipped", second.detail);
   assert.match(readFileSync(join(root, "src", "search.ts"), "utf8"), /second pass/);
+});
+
+test("a failed staging deploy is not a ship, and offers the human nothing to press", async (t) => {
+  const root = productRepo();
+  const tr = tracker();
+  const s = new Store(mkdtempSync(join(tmpdir(), "ap-store-")));
+  t.after(() => s.close());
+  const created = await tr.create({ title: "a", description: "", lane: "ai", priority: 2 });
+
+  const out = await runEngineer({
+    config: config(root, {
+      environments: { staging: { deploy: "exit 9" }, production: { deploy: "touch PRODUCTION_WAS_DEPLOYED" } },
+    }),
+    tracker: tr,
+    store: s,
+    agent: new FakeAgent([shipsCode("flag_ap_1")]),
+    ticket: { ...ticket(), id: created.id },
+  });
+
+  assert.equal(out.status, "deploy-failed", out.detail);
+  assert.match(out.detail, /staging deploy failed \(exit 9\)/);
+  assert.deepEqual(s.undigestedRuns(), [], "nothing pressable is recorded for a build that never deployed");
+  assert.notEqual((await tr.get(created.id))?.state, "Done");
+  assert.deepEqual(s.undigestedSignals().map((x) => x.kind), ["deploy-failed"]);
+});
+
+test("the repo goes back to the default branch whatever happened", async () => {
+  const cases: [string, FakeStep][] = [
+    ["conflict", reply({ outcome: "conflict", summary: "no", conflict: "the anchor forbids it" })],
+    ["blocked", reply({ outcome: "blocked", summary: "no", runbook: "open the dashboard" })],
+    ["no-change", reply({ outcome: "shipped", summary: "I thought about it" })],
+  ];
+
+  for (const [name, step] of cases) {
+    const root = productRepo();
+    const tr = tracker();
+    const created = await tr.create({ title: "a", description: "", lane: "ai", priority: 2 });
+    await runEngineer({
+      config: config(root),
+      tracker: tr,
+      agent: new FakeAgent([step]),
+      ticket: { ...ticket(), id: created.id },
+    });
+    assert.equal(new Git(root).currentBranch(), "main", `${name} left the tree on the ticket branch`);
+    assert.equal((await tr.get(created.id))?.state, "Backlog", `${name} left the ticket in flight`);
+  }
+});
+
+test("a gate failure returns the tree to base but keeps the branch, so the next run resumes", async () => {
+  const root = productRepo();
+  const tr = tracker();
+  const created = await tr.create({ title: "a", description: "", lane: "ai", priority: 2 });
+
+  const out = await runEngineer({
+    config: config(root, { gate: { commands: ["false"] } }),
+    tracker: tr,
+    agent: new FakeAgent([shipsCode("flag_ap_1")]),
+    ticket: { ...ticket(), id: created.id },
+  });
+
+  assert.equal(out.status, "gate-failed");
+  const git = new Git(root);
+  assert.equal(git.currentBranch(), "main");
+  assert.ok(git.branchExists("auto/ap-1"), "the work is still on its branch");
+  assert.equal((await tr.get(created.id))?.state, "In Progress", "still in flight, on purpose");
+});
+
+test("a press reads the default branch, not whatever branch is checked out", async (t) => {
+  const root = productRepo();
+  const s = new Store(mkdtempSync(join(tmpdir(), "ap-store-")));
+  t.after(() => s.close());
+  const cfg = config(root);
+  const git = new Git(root);
+  const mainHead = git.headOf("main");
+
+  // A runner that stopped mid-ticket used to leave the tree here.
+  git.checkoutBranch("auto/ap-1");
+  writeFileSync(join(root, "src", "search.ts"), "export const rank = () => [2];\n");
+  const branchHead = git.commitAll("unreviewed work on a branch");
+  assert.notEqual(branchHead, mainHead);
+
+  s.recordRun({ ticketId: "AP-1", commitSHA: mainHead, branch: "auto/ap-1", flag: "f", summary: "s" });
+  const pressed = pressProduction({ config: cfg, store: s, ticketId: "AP-1", approvedBy: "serhii" });
+
+  assert.equal(pressed.commitSHA, mainHead, "the press approves what is on main, not the branch tip");
+  assert.ok(s.approvalFor("AP-1", mainHead));
+  assert.equal(s.approvalFor("AP-1", branchHead), undefined);
 });

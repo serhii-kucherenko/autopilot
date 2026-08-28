@@ -72,12 +72,20 @@ export async function openTickets(cfg: Config): Promise<{ tickets: Ticket[]; err
   }
 }
 
+export type Authorised = { ok: true } | { ok: false; why: string };
+
+function sameSecret(offered: string, expected: string): boolean {
+  const a = Buffer.from(offered);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /**
  * `docs/intake.md` requirement 2: not an open inbox. A per-build token in a header, present
  * only in dev and staging builds. Compared in constant time, and a missing token on the
  * server refuses every upload rather than defaulting to open.
  */
-export function intakeAuthorised(request: Request): { ok: true } | { ok: false; why: string } {
+export function intakeAuthorised(request: Request): Authorised {
   const expected = process.env.AUTOPILOT_INTAKE_TOKEN;
   if (!expected) {
     return {
@@ -90,10 +98,52 @@ export function intakeAuthorised(request: Request): { ok: true } | { ok: false; 
 
   const header = request.headers.get("authorization") ?? "";
   const offered = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-  const a = Buffer.from(offered);
-  const b = Buffer.from(expected);
-  const ok = a.length === b.length && timingSafeEqual(a, b);
-  return ok ? { ok: true } : { ok: false, why: "bad or missing intake token" };
+  return sameSecret(offered, expected) ? { ok: true } : { ok: false, why: "bad or missing intake token" };
+}
+
+export const CONSOLE_TOKEN_HEADER = "x-autopilot-console";
+
+/**
+ * The token the console's own pages carry.
+ *
+ * **This is not user authentication, and the console has none.** Anyone who can load a page
+ * gets this token, because the page serves it. What it does buy is real and was missing: a
+ * blind POST from another site or a script that never loaded the console is refused, and the
+ * crops - screenshots of a running product - are not readable by an unauthenticated GET.
+ *
+ * The press was completely unauthenticated before this. That is the one gate the whole safety
+ * argument rests on: any POST `{"ticketId":"X"}` recorded an approval, and `autopilot release`
+ * honoured it. Fail-closed here, and run the console on a private network or behind an
+ * authenticating proxy. `SECURITY.md` says so too.
+ */
+export function consoleToken(): string | undefined {
+  return process.env.AUTOPILOT_CONSOLE_TOKEN;
+}
+
+export const CONSOLE_TOKEN_PARAM = "t";
+
+/**
+ * `allowQuery` exists for one caller: an `<img src>` cannot send a header. Same secret, same
+ * constant-time compare. The URL only ever appears inside a console page, and the crop route
+ * marks its responses `private`.
+ */
+export function consoleAuthorised(request: Request, allowQuery = false): Authorised {
+  const expected = consoleToken();
+  if (!expected) {
+    return {
+      ok: false,
+      why:
+        "AUTOPILOT_CONSOLE_TOKEN is not set on the server, so this route is refused. " +
+        "Set it to any long random string; the console's pages carry it for you. " +
+        "It is a fail-closed gate, not user authentication - keep the console off the public internet.",
+    };
+  }
+  const fromHeader = request.headers.get(CONSOLE_TOKEN_HEADER) ?? "";
+  const fromQuery = allowQuery
+    ? (new URL(request.url).searchParams.get(CONSOLE_TOKEN_PARAM) ?? "")
+    : "";
+  const ok = sameSecret(fromHeader, expected) || (allowQuery && sameSecret(fromQuery, expected));
+  return ok ? { ok: true } : { ok: false, why: "bad or missing console token" };
 }
 
 /** The image bytes for one annotation's crop, or nothing. Paths are never trusted. */

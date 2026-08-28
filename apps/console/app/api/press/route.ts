@@ -10,9 +10,13 @@
  */
 
 import { pressProduction, Git } from "@autopilot/core";
-import { config, openStore } from "../../../lib/server.ts";
+import { consoleAuthorised, config, openStore } from "../../../lib/server.ts";
 
 export async function POST(request: Request): Promise<Response> {
+  // The one gate the whole safety argument rests on. This route was unauthenticated.
+  const auth = consoleAuthorised(request);
+  if (!auth.ok) return Response.json({ error: auth.why }, { status: 401 });
+
   let body: { ticketId?: unknown; approvedBy?: unknown };
   try {
     body = (await request.json()) as typeof body;

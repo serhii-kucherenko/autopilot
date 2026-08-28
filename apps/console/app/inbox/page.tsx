@@ -7,13 +7,17 @@
  * broken image.
  */
 
-import { config, openStore } from "../../lib/server.ts";
+import { CONSOLE_TOKEN_PARAM, config, consoleToken, openStore } from "../../lib/server.ts";
 import { Chip } from "../../components/Chip.tsx";
 
 export const dynamic = "force-dynamic";
 
 export default function InboxPage() {
   const cfg = config();
+  // An <img> cannot send a header, so the crop URL carries the token. See lib/server.ts.
+  const crop = (session: string, annotation: string) =>
+    `/api/crops/${encodeURIComponent(session)}/${encodeURIComponent(annotation)}` +
+    `?${CONSOLE_TOKEN_PARAM}=${encodeURIComponent(consoleToken() ?? "")}`;
   const store = openStore();
   const waiting = store.undrained();
   store.close();
@@ -78,7 +82,7 @@ export default function InboxPage() {
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       className="annotation__crop"
-                      src={`/api/crops/${encodeURIComponent(bundle.sessionID)}/${encodeURIComponent(annotation.id)}`}
+                      src={crop(bundle.sessionID, annotation.id)}
                       alt={`What they pointed at${annotation.screen ? ` on ${annotation.screen}` : ""}`}
                     />
                   ) : (

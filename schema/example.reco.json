@@ -36,7 +36,7 @@
   "boundaries": {
     "protectedPaths": [
       "ios/Secrets/",
-      ".env*",
+      "**/.env*",
       "fastlane/match/",
       "public/pdfjs/",
       "ios/DerivedData*/"

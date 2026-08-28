@@ -46,6 +46,15 @@ export class Git {
     return this.run(["rev-parse", "HEAD"]);
   }
 
+  /**
+   * The tip of a named ref. Everything about production reads this rather than `head()`:
+   * `head()` is the tip of whatever branch happens to be checked out, so a press taken while
+   * the repo sat on a ticket branch would approve a commit nobody reviewed.
+   */
+  headOf(ref: string): string {
+    return this.run(["rev-parse", ref]);
+  }
+
   currentBranch(): string {
     return this.run(["rev-parse", "--abbrev-ref", "HEAD"]);
   }

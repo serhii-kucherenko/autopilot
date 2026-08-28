@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Bar } from "../components/Bar.tsx";
-import { config, openStore, openTickets } from "../lib/server.ts";
+import { config, consoleToken, openStore, openTickets } from "../lib/server.ts";
+import { CONSOLE_TOKEN_META } from "../lib/console-token.ts";
 
 export const metadata = {
   title: "Autopilot console",
@@ -22,6 +23,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <head>
+        {/*
+          The console token, for the browser to send back on every write. Not user
+          authentication - see lib/server.ts. Absent means the write routes fail closed.
+        */}
+        {consoleToken() ? <meta name={CONSOLE_TOKEN_META} content={consoleToken()} /> : null}
         {/*
           A <link> rather than next/font: the demo has to run with no network, and every face
           in DESIGN.md carries a real fallback stack, so a missing webfont changes nothing but
@@ -48,6 +54,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             {cfg.product.name} · staging {cfg.environments.staging.url ?? cfg.environments.staging.deploy} ·
             the loop ships here and nowhere else. Production needs your press.
           </p>
+          {consoleToken() ? null : (
+            <p style={{ marginTop: "var(--space-xs)", color: "var(--color-danger)" }}>
+              AUTOPILOT_CONSOLE_TOKEN is not set, so the press, feedback and the crops are
+              refused. Set it to any long random string and restart.
+            </p>
+          )}
         </footer>
       </body>
     </html>

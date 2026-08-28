@@ -96,9 +96,10 @@ export async function runSelfAudit(options: SelfAuditOptions): Promise<SelfAudit
   }
 
   const nothingToDo = findings.length === 0;
-  const created: Ticket[] = [];
 
-  for (const finding of findings) {
+  // Same rule as triage: validate the whole reply before writing any of it, so a bad fifth
+  // finding cannot leave four tickets filed under a run that reported failure.
+  const planned: NewTicket[] = findings.map((finding) => {
     if (finding.lane === "human") {
       throw new ReplyError(
         `self-audit tried to file "${String(finding.title)}" in the human lane. ` +
@@ -115,7 +116,7 @@ export async function runSelfAudit(options: SelfAuditOptions): Promise<SelfAudit
     const priority =
       typeof rawPriority === "number" && rawPriority >= 1 && rawPriority <= 4 ? Math.round(rawPriority) : 3;
 
-    const ticket: NewTicket = {
+    return {
       title,
       description: [
         `**Where**\n\n\`${where}\``,
@@ -129,17 +130,20 @@ export async function runSelfAudit(options: SelfAuditOptions): Promise<SelfAudit
       priority,
       labels: ["self-audit"],
     };
+  });
 
+  const created: Ticket[] = [];
+  for (const ticket of planned) {
     if (options.dryRun) {
       created.push({
         id: `(dry-run ${created.length + 1})`,
-        title,
+        title: ticket.title,
         description: ticket.description,
         lane: "ai",
-        priority,
+        priority: ticket.priority,
         state: "Backlog",
         stateType: "backlog",
-        labels: ["self-audit"],
+        labels: ticket.labels ?? [],
         blockedBy: [],
         createdAt: new Date().toISOString(),
       });

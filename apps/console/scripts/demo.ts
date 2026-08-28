@@ -16,6 +16,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -132,6 +133,7 @@ function buildProductRepo(): void {
 }
 
 const CONFIG_PATH = join(HERE, "autopilot.config.json");
+const ENV_PATH = join(HERE, ".env.local");
 
 /**
  * Written to disk as well as held in memory, because the console reads
@@ -157,7 +159,7 @@ function demoConfig(): Config {
     },
     capture: { loupe: { enabled: true }, conversational: true },
     boundaries: {
-      protectedPaths: ["docs/adr/", ".env*"],
+      protectedPaths: ["docs/adr/", "**/.env*"],
       forbiddenCommands: ["git push --force", "rm -rf"],
       maxTicketsInFlight: 1,
     },
@@ -343,6 +345,25 @@ async function main(): Promise<number> {
   );
   say(`      wrote ${CONFIG_PATH}`);
 
+  /*
+   * The console's writes are fail-closed on `AUTOPILOT_CONSOLE_TOKEN`, so without one the
+   * production press would refuse and the demo would stop half a step short. Next reads
+   * `.env.local` on its own, which makes `pnpm console` work straight after this with nothing
+   * to export by hand. A fresh secret each run, and the file is gitignored.
+   */
+  writeFileSync(
+    ENV_PATH,
+    [
+      "# Written by `pnpm demo`. Gitignored, and regenerated on every run.",
+      "# The console's writes are fail-closed on this; see SECURITY.md - it is a gate, not",
+      "# user authentication, and the console must not face the public internet.",
+      `AUTOPILOT_CONSOLE_TOKEN=${randomBytes(24).toString("hex")}`,
+      "AUTOPILOT_FAKE=1",
+      "",
+    ].join("\n"),
+  );
+  say(`      wrote ${ENV_PATH} with a fresh console token`);
+
   const store = new Store(STORE_ROOT);
   const tracker = new FileTracker(join(STORE_ROOT, "tickets.json"));
 
@@ -403,7 +424,7 @@ async function main(): Promise<number> {
     say(`      ${refused.message}`);
 
     step(6, total, "Open the console and walk it");
-    say("      pnpm --filter @autopilot/console dev     then http://localhost:4317");
+    say("      pnpm console        then open http://localhost:4317");
     say("");
     say("      As the loop:   Inbox has the acked bundle's crops and traces");
     say("      As the human:  Digest has the staged change and its press;");

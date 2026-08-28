@@ -227,7 +227,7 @@ const ISSUE_FIELDS = `
   createdAt
   state { name type }
   labels { nodes { name } }
-  relations { nodes { type relatedIssue { identifier } } }
+  inverseRelations { nodes { type issue { identifier } } }
 `;
 
 interface LinearIssue {
@@ -241,7 +241,14 @@ interface LinearIssue {
   createdAt: string;
   state: { name: string; type: string };
   labels: { nodes: { name: string }[] };
-  relations?: { nodes: { type: string; relatedIssue?: { identifier: string } }[] };
+  /**
+   * The *inverse* direction, deliberately. In Linear, `relations` with `type: "blocks"` means
+   * this issue blocks the related one; `inverseRelations` with `type: "blocks"` means the
+   * related one blocks this one. Reading `relations` populated `blockedBy` with the tickets a
+   * ticket was blocking, so `pickNext` skipped the blocker and cheerfully started the blocked
+   * work - the exact inversion of what the field is for.
+   */
+  inverseRelations?: { nodes: { type: string; issue?: { identifier: string } }[] };
 }
 
 /**
@@ -303,9 +310,9 @@ export class LinearTracker implements Tracker {
       state: issue.state.name,
       stateType: issue.state.type as StateType,
       labels,
-      blockedBy: (issue.relations?.nodes ?? [])
-        .filter((r) => r.type === "blocks" && r.relatedIssue)
-        .map((r) => r.relatedIssue!.identifier),
+      blockedBy: (issue.inverseRelations?.nodes ?? [])
+        .filter((r) => r.type === "blocks" && r.issue)
+        .map((r) => r.issue!.identifier),
       createdAt: issue.createdAt,
       url: issue.url,
       branchName: issue.branchName,
@@ -353,11 +360,29 @@ export class LinearTracker implements Tracker {
     return found.id;
   }
 
-  private async labelIds(names: string[]): Promise<string[]> {
+  /**
+   * Label names to ids. A missing *lane* label is fatal, not something to skip.
+   *
+   * Silently dropping it was a real bug with a nasty shape: a human-lane ticket created
+   * without `lane:human` reads back as `lane:ai` through `laneFromLabels`, so the loop would
+   * build a feature the human was supposed to decide on first.
+   */
+  private async labelIds(names: string[], required: string[] = []): Promise<string[]> {
     if (names.length === 0) return [];
     const data = await this.gql<{ issueLabels: { nodes: { id: string; name: string }[] } }>(
       `query Labels { issueLabels(first: 250) { nodes { id name } } }`,
     );
+
+    const missingRequired = required.filter(
+      (name) => !data.issueLabels.nodes.some((l) => l.name === name),
+    );
+    if (missingRequired.length > 0) {
+      throw new Error(
+        `Linear has no label named ${missingRequired.join(", ")}. The lane is a label ` +
+          "(integrations/README.md), and a ticket filed without it reads back as the AI lane. " +
+          "Create it in Linear, or point tracker.laneLabels at the names you already use.",
+      );
+    }
     return names
       .map((n) => data.issueLabels.nodes.find((l) => l.name === n)?.id)
       .filter((id): id is string => Boolean(id));
@@ -365,8 +390,10 @@ export class LinearTracker implements Tracker {
 
   async create(input: NewTicket): Promise<Ticket> {
     const [teamId, projectId] = await Promise.all([this.teamId(), this.projectId()]);
+    const lane = LANE_LABEL[input.lane];
     const labelIds = await this.labelIds(
-      Array.from(new Set([...(input.labels ?? []), LANE_LABEL[input.lane]])),
+      Array.from(new Set([...(input.labels ?? []), lane])),
+      [lane],
     );
 
     const data = await this.gql<{ issueCreate: { issue: LinearIssue } }>(

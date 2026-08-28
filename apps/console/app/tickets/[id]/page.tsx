@@ -11,6 +11,7 @@ import { config, openStore, tracker } from "../../../lib/server.ts";
 import { Chip, statusForTicket } from "../../../components/Chip.tsx";
 import { PressButton } from "../../../components/PressButton.tsx";
 import { FeedbackBox } from "../../../components/FeedbackBox.tsx";
+import { TicketBody } from "../../../components/TicketBody.tsx";
 
 export const dynamic = "force-dynamic";
 
@@ -60,22 +61,7 @@ export default async function TicketPage({ params }: { params: Promise<{ id: str
       {ticket.description ? (
         <section className="card digest">
           <h2>What triage resolved</h2>
-          {/*
-            Rendered as plain text, deliberately: the description carries the person's exact
-            words, and running device-supplied text through a markdown renderer would be an
-            injection surface for no gain.
-          */}
-          <pre
-            style={{
-              marginTop: "var(--space-sm)",
-              whiteSpace: "pre-wrap",
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-sm)",
-              color: "var(--color-ink-2)",
-            }}
-          >
-            {ticket.description}
-          </pre>
+          <TicketBody description={ticket.description} />
         </section>
       ) : null}
 

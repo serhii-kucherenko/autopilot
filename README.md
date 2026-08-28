@@ -110,8 +110,14 @@ pnpm autopilot loop   --config path/to/autopilot.config.json   # one cycle. --dr
 | `digest` | what landed on staging, in one message. Silent on a quiet day |
 | `release <ticket>` | production. Refuses without a human approval for that exact commit |
 | `check-anchor` | values the code uses that `DESIGN.md` never declared |
+| `prune` | delete acked bundles and their screenshots past the retention window |
 
 `--dry-run` on everything that writes. `--fake` runs any of them fully offline.
+
+Two environment variables, both fail-closed: `AUTOPILOT_INTAKE_TOKEN` for uploading bundles and
+`AUTOPILOT_CONSOLE_TOKEN` for the console's own writes. The console has **no user
+authentication** - keep it on a private network or behind an authenticating proxy, and read
+[SECURITY.md](SECURITY.md) before hosting it.
 
 ## Status
 

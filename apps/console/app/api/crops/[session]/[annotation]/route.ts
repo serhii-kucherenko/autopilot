@@ -4,12 +4,17 @@
  * running product - `docs/intake.md` says to treat them as sensitive.
  */
 
-import { cropBytes } from "../../../../../lib/server.ts";
+import { consoleAuthorised, cropBytes } from "../../../../../lib/server.ts";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ session: string; annotation: string }> },
 ): Promise<Response> {
+  // A crop is a screenshot of a running product. `docs/intake.md` says treat the store as
+  // sensitive, which an unauthenticated GET did not.
+  const auth = consoleAuthorised(request, true);
+  if (!auth.ok) return new Response(auth.why, { status: 401 });
+
   const { session, annotation } = await context.params;
   const bytes = cropBytes(session, annotation);
   if (!bytes) return new Response("no crop", { status: 404 });

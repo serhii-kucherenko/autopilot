@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { consoleFetch } from "../lib/console-token.ts";
 
 type State = "idle" | "confirming" | "pressing" | "pressed" | "failed";
 
@@ -19,11 +20,7 @@ export function PressButton({ ticketId, commit }: { ticketId: string; commit: st
   async function press() {
     setState("pressing");
     try {
-      const response = await fetch("/api/press", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ticketId }),
-      });
+      const response = await consoleFetch("/api/press", { ticketId });
       const body = (await response.json()) as { error?: string; commitSHA?: string };
       if (!response.ok) {
         setState("failed");

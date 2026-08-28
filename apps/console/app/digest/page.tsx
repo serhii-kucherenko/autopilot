@@ -26,7 +26,7 @@ export default async function DigestPage() {
 
   const needsYou = tickets.filter((t) => t.lane === "human" && t.stateType !== "completed");
 
-  if (runs.length === 0) {
+  if (runs.length === 0 && signals.length === 0) {
     return (
       <>
         <div className="head">
@@ -64,14 +64,18 @@ export default async function DigestPage() {
       <div className="head">
         <span className="label">Digest</span>
         <h1>
-          {runs.length} {runs.length === 1 ? "change is" : "changes are"} on staging
+          {runs.length === 0
+            ? "Nothing shipped, but the loop hit something"
+            : `${runs.length} ${runs.length === 1 ? "change is" : "changes are"} on staging`}
         </h1>
         <p className="head__lede">
-          Everything below is merged behind a flag and deployed to staging. None of it is in
-          production. Reading this and pressing is the whole of your job here.
+          {runs.length === 0
+            ? "A batch of nothing but failures is not a quiet day. What the loop ran into is below."
+            : "Everything below is merged behind a flag and deployed to staging. None of it is in production. Reading this and pressing is the whole of your job here."}
         </p>
       </div>
 
+      {runs.length > 0 ? (
       <section className="card digest" aria-labelledby="shipped">
         <h2 id="shipped">Shipped to staging</h2>
         {runs.map((run) => (
@@ -104,6 +108,7 @@ export default async function DigestPage() {
           </div>
         ))}
       </section>
+      ) : null}
 
       {needsYou.length > 0 ? (
         <section className="card digest" style={{ marginTop: "var(--space-lg)" }}>

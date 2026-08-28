@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { Store } from "@autopilot/core";
 
 const TOKEN = "test-build-token";
+const CONSOLE_TOKEN = "test-console-token";
 const PNG = Buffer.from("fake-png-bytes").toString("base64");
 const SESSION = "aaaa1111-0000-4000-8000-000000000001";
 
@@ -56,6 +57,7 @@ async function workspace() {
   process.env.AUTOPILOT_STORE = root;
   process.env.AUTOPILOT_CONFIG = configPath;
   process.env.AUTOPILOT_INTAKE_TOKEN = TOKEN;
+  process.env.AUTOPILOT_CONSOLE_TOKEN = CONSOLE_TOKEN;
   process.env.AUTOPILOT_FAKE = "1";
 
   const bust = `?t=${root}`;
@@ -82,6 +84,20 @@ function bundleJSON(sessionID = SESSION) {
       },
     ],
   };
+}
+
+/** A console-page write: the token goes in the header the pages send. */
+function consolePost(path: string, body: unknown, token = CONSOLE_TOKEN): Request {
+  return new Request(`http://console.test${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-autopilot-console": token },
+    body: JSON.stringify(body),
+  });
+}
+
+/** A crop fetch. An <img> cannot send a header, so the token rides in the query. */
+function cropRequest(token = CONSOLE_TOKEN): Request {
+  return new Request(`http://console.test/api/crops/x/y?t=${encodeURIComponent(token)}`);
 }
 
 function post(body: unknown, token = TOKEN): Request {
@@ -175,7 +191,7 @@ test("a crop is served as a real PNG, and a made-up id is a 404, not a file read
   const w = await workspace();
   await w.bundles.POST(post(bundleJSON()));
 
-  const image = await w.crops.GET(new Request("http://console.test/api/crops/x/y"), {
+  const image = await w.crops.GET(cropRequest(), {
     params: Promise.resolve({ session: SESSION, annotation: `${SESSION}-a1` }),
   });
   assert.equal(image.status, 200);
@@ -183,7 +199,7 @@ test("a crop is served as a real PNG, and a made-up id is a 404, not a file read
   assert.equal(Buffer.from(await image.arrayBuffer()).toString("base64"), PNG);
 
   for (const attempt of ["../../../etc/passwd", "..", "unknown"]) {
-    const bad = await w.crops.GET(new Request("http://console.test/api/crops/x/y"), {
+    const bad = await w.crops.GET(cropRequest(), {
       params: Promise.resolve({ session: attempt, annotation: attempt }),
     });
     assert.equal(bad.status, 404, `${attempt} must not resolve`);
@@ -198,11 +214,7 @@ test("the press records an approval and does not deploy anything", async () => {
   store.close();
 
   const response = await w.press.POST(
-    new Request("http://console.test/api/press", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ticketId: "AP-1", approvedBy: "serhii" }),
-    }),
+    consolePost("/api/press", { ticketId: "AP-1", approvedBy: "serhii" }),
   );
 
   assert.equal(response.status, 200);
@@ -225,11 +237,7 @@ test("the press records an approval and does not deploy anything", async () => {
 test("pressing something that never shipped is refused", async () => {
   const w = await workspace();
   const response = await w.press.POST(
-    new Request("http://console.test/api/press", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ticketId: "AP-9" }),
-    }),
+    consolePost("/api/press", { ticketId: "AP-9" }),
   );
   assert.equal(response.status, 409);
   assert.match(((await response.json()) as { error: string }).error, /has not shipped to staging/);
@@ -238,11 +246,7 @@ test("pressing something that never shipped is refused", async () => {
 test("feedback is stored verbatim and never touches a ticket", async () => {
   const w = await workspace();
   const response = await w.feedback.POST(
-    new Request("http://console.test/api/feedback", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "  the search feels slow  ", about: "AP-1" }),
-    }),
+    consolePost("/api/feedback", { text: "  the search feels slow  ", about: "AP-1" }),
   );
   assert.equal(response.status, 200);
 
@@ -252,11 +256,7 @@ test("feedback is stored verbatim and never touches a ticket", async () => {
   assert.equal(line.about, "AP-1");
 
   const empty = await w.feedback.POST(
-    new Request("http://console.test/api/feedback", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: "   " }),
-    }),
+    consolePost("/api/feedback", { text: "   " }),
   );
   assert.equal(empty.status, 400);
 });
@@ -292,4 +292,78 @@ test("no route imports anything that could write to the tracker or deploy", asyn
       assert.equal(source.includes(name), false, `${route} must not reach ${name}`);
     }
   }
+});
+
+/* --------------------------------------------------------------- console token */
+
+test("the press refuses an unauthenticated POST, which it used to accept", async () => {
+  const w = await workspace();
+  const store = new Store(w.root);
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: w.product, encoding: "utf8" }).trim();
+  store.recordRun({ ticketId: "AP-1", commitSHA: head, branch: "b", flag: "f", summary: "s" });
+  store.close();
+
+  const bare = await w.press.POST(
+    new Request("http://console.test/api/press", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ticketId: "AP-1" }),
+    }),
+  );
+  assert.equal(bare.status, 401, "a blind POST must not record a production approval");
+
+  const wrong = await w.press.POST(consolePost("/api/press", { ticketId: "AP-1" }, "not-the-token"));
+  assert.equal(wrong.status, 401);
+
+  const after = new Store(w.root);
+  assert.equal(after.approvalFor("AP-1", head), undefined, "nothing was approved");
+  after.close();
+});
+
+test("a server with no console token refuses the press, rather than defaulting to open", async () => {
+  const w = await workspace();
+  delete process.env.AUTOPILOT_CONSOLE_TOKEN;
+  try {
+    const response = await w.press.POST(consolePost("/api/press", { ticketId: "AP-1" }));
+    assert.equal(response.status, 401);
+    assert.match(((await response.json()) as { error: string }).error, /AUTOPILOT_CONSOLE_TOKEN is not set/);
+  } finally {
+    process.env.AUTOPILOT_CONSOLE_TOKEN = CONSOLE_TOKEN;
+  }
+});
+
+test("feedback and the crops are gated too, since one is a write and one is a screenshot", async () => {
+  const w = await workspace();
+  await w.bundles.POST(post(bundleJSON()));
+
+  const feedback = await w.feedback.POST(
+    new Request("http://console.test/api/feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "hello" }),
+    }),
+  );
+  assert.equal(feedback.status, 401);
+
+  const crop = await w.crops.GET(new Request("http://console.test/api/crops/x/y"), {
+    params: Promise.resolve({ session: SESSION, annotation: `${SESSION}-a1` }),
+  });
+  assert.equal(crop.status, 401, "a product screenshot is not world-readable");
+
+  const withToken = await w.crops.GET(cropRequest(), {
+    params: Promise.resolve({ session: SESSION, annotation: `${SESSION}-a1` }),
+  });
+  assert.equal(withToken.status, 200);
+});
+
+test("the intake token cannot press production, because device builds carry it", async () => {
+  const w = await workspace();
+  const response = await w.press.POST(
+    new Request("http://console.test/api/press", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-autopilot-console": TOKEN },
+      body: JSON.stringify({ ticketId: "AP-1" }),
+    }),
+  );
+  assert.equal(response.status, 401, "two separate secrets on purpose");
 });

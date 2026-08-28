@@ -189,3 +189,105 @@ test("a GraphQL error is raised with the message but without the key", async () 
 test("LinearTracker refuses to construct without a key, and says how to get one", () => {
   assert.throws(() => new LinearTracker({ apiKey: "", project: "P" }), /LINEAR_API_KEY/);
 });
+
+/** A fake Linear that answers a fixed map of query-substring to payload. */
+function fakeLinear(answers: [RegExp, unknown][]): typeof fetch {
+  return (async (_url: string, init: RequestInit) => {
+    const { query } = JSON.parse(init.body as string) as { query: string };
+    const hit = answers.find(([pattern]) => pattern.test(query));
+    if (!hit) throw new Error(`the test has no answer for: ${query.slice(0, 60)}`);
+    return new Response(JSON.stringify({ data: hit[1] }), { status: 200 });
+  }) as typeof fetch;
+}
+
+function linearIssue(over: Record<string, unknown> = {}) {
+  return {
+    id: "uuid-1",
+    identifier: "SER-1",
+    title: "t",
+    description: "d",
+    priority: 2,
+    url: "https://linear.app/x",
+    branchName: "auto/ser-1",
+    createdAt: "2026-08-01T00:00:00Z",
+    state: { name: "Backlog", type: "backlog" },
+    labels: { nodes: [{ name: "lane:ai" }] },
+    inverseRelations: { nodes: [] },
+    ...over,
+  };
+}
+
+test("blockedBy reads the inverse relation, or it lists what the ticket blocks instead", async () => {
+  const t = new LinearTracker({
+    apiKey: "k",
+    project: "P",
+    fetchImpl: fakeLinear([
+      [
+        /query Open/,
+        {
+          issues: {
+            nodes: [
+              linearIssue({
+                // SER-9 blocks SER-1. In Linear that is an inverse relation on SER-1.
+                inverseRelations: { nodes: [{ type: "blocks", issue: { identifier: "SER-9" } }] },
+              }),
+            ],
+          },
+        },
+      ],
+    ]),
+  });
+
+  const open = await t.listOpen();
+  assert.deepEqual(open[0]!.blockedBy, ["SER-9"]);
+});
+
+test("the query asks for inverseRelations, not relations", async () => {
+  const queries: string[] = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    queries.push((JSON.parse(init.body as string) as { query: string }).query);
+    return new Response(JSON.stringify({ data: { issues: { nodes: [] } } }), { status: 200 });
+  }) as typeof fetch;
+
+  await new LinearTracker({ apiKey: "k", project: "P", fetchImpl }).listOpen();
+  assert.match(queries[0]!, /inverseRelations/);
+  assert.equal(/\brelations\s*\{/.test(queries[0]!.replace(/inverseRelations/g, "")), false);
+});
+
+test("a missing lane label is fatal, not a quiet downgrade to the AI lane", async () => {
+  const t = new LinearTracker({
+    apiKey: "k",
+    project: "P",
+    fetchImpl: fakeLinear([
+      [/query Teams/, { teams: { nodes: [{ id: "team-1", name: "Core Team" }] } }],
+      [/query Projects/, { projects: { nodes: [{ id: "proj-1", name: "P" }] } }],
+      // The workspace has lane:ai but not lane:human.
+      [/query Labels/, { issueLabels: { nodes: [{ id: "l1", name: "lane:ai" }] } }],
+    ]),
+  });
+
+  await assert.rejects(
+    t.create({ title: "a feature", description: "", lane: "human", priority: 3 }),
+    (e: Error) => {
+      assert.match(e.message, /no label named lane:human/);
+      assert.match(e.message, /reads back as the AI lane/);
+      return true;
+    },
+  );
+});
+
+test("an ordinary label that does not exist is still skipped, since only the lane is load-bearing", async () => {
+  const t = new LinearTracker({
+    apiKey: "k",
+    project: "P",
+    fetchImpl: fakeLinear([
+      [/query Teams/, { teams: { nodes: [{ id: "team-1", name: "Core Team" }] } }],
+      [/query Projects/, { projects: { nodes: [{ id: "proj-1", name: "P" }] } }],
+      [/query Labels/, { issueLabels: { nodes: [{ id: "l1", name: "lane:ai" }] } }],
+      [/mutation Create/, { issueCreate: { issue: linearIssue() } }],
+    ]),
+  });
+
+  const created = await t.create({ title: "a", description: "", lane: "ai", priority: 2, labels: ["nope"] });
+  assert.equal(created.id, "SER-1");
+});

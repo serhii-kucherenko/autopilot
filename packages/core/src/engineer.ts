@@ -42,7 +42,8 @@ export type EngineerStatus =
   | "blocked"
   | "no-change"
   | "agent-failed"
-  | "out-of-bounds";
+  | "out-of-bounds"
+  | "deploy-failed";
 
 /**
  * Outcomes worth counting for `docs/coherence.md`. `shipped` is the happy path and
@@ -55,6 +56,7 @@ const SIGNAL_STATUSES: Extract<EngineerStatus, SignalKind>[] = [
   "gate-failed",
   "out-of-bounds",
   "agent-failed",
+  "deploy-failed",
 ];
 
 function signalKind(status: EngineerStatus): SignalKind | undefined {
@@ -86,6 +88,14 @@ export interface EngineerOptions {
   /** Injected in tests. Defaults to a real git in the product repo. */
   git?: Git;
 }
+
+/**
+ * Statuses that leave the ticket parked rather than done, so its state goes back to the
+ * backlog and the working tree goes back to the default branch. Leaving a ticket `started`
+ * made `pickNext` resume it on every wake: a blocked ticket got the same runbook comment
+ * once per cycle and the loop never reached ticket two.
+ */
+const PARKED: EngineerStatus[] = ["conflict", "blocked", "no-change"];
 
 /**
  * States the runner moves a ticket through. Named here so nothing invents a new one.
@@ -121,9 +131,34 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
     return { status, ticketId: ticket.id, summary, branch, flag, detail };
   };
 
+  /**
+   * Leave the product repo where it was found, on the default branch, whatever happened.
+   *
+   * Not tidiness. A repo left on a ticket branch is a production-safety hole: the console's
+   * press used to read `HEAD`, so a press taken while the tree sat on `auto/ser-1` approved a
+   * commit nobody had reviewed. `headOf(defaultBranch)` closed that from the other side; this
+   * closes it from this one, and it also stops the next run's checkout throwing.
+   */
+  const goHome = (): void => {
+    try {
+      if (git.currentBranch() !== base) git.checkout(base);
+    } catch {
+      // Uncommittable work in the tree can block a checkout. Say so through the outcome
+      // rather than throwing out of the runner and killing the whole loop.
+    }
+  };
+
   if (!git.isRepo()) {
     return fail("blocked", "the product repo is not a git repository", `no git repo at ${config.repo.root}`);
   }
+
+  /** A parked or failed ticket goes back to the backlog and the repo goes back to base. */
+  const park = async (status: EngineerStatus, summary: string, detail: string): Promise<EngineerOutcome> => {
+    const outcome = fail(status, summary, detail);
+    if (PARKED.includes(status)) await tracker.setState(ticket.id, STATE.backlog);
+    goHome();
+    return outcome;
+  };
 
   if (!options.dryRun) await tracker.setState(ticket.id, STATE.working);
   git.checkout(base);
@@ -169,7 +204,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   const result = await agent.run({ prompt, cwd: config.repo.root, permissionMode: "acceptEdits" });
   if (!result.ok) {
     await tracker.comment(ticket.id, `The engineer run failed before producing a diff.\n\n${result.stderr ?? result.text}`);
-    return fail("agent-failed", "the agent run failed", result.stderr ?? result.text);
+    return park("agent-failed", "the agent run failed", result.stderr ?? result.text);
   }
 
   const reply = parseReply<Record<string, unknown>>(result.text);
@@ -183,8 +218,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   if (outcome === "conflict") {
     const conflict = optionalString(reply, "conflict") ?? summary;
     await tracker.comment(ticket.id, `Stopped on an anchor conflict, for the human to decide.\n\n${conflict}`);
-    await tracker.setState(ticket.id, STATE.backlog);
-    const out = fail("conflict", summary, conflict);
+    const out = await park("conflict", summary, conflict);
     out.conflict = conflict;
     return out;
   }
@@ -192,7 +226,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   if (outcome === "blocked") {
     const runbook = optionalString(reply, "runbook") ?? "no runbook was written, which is itself a bug";
     await tracker.comment(ticket.id, `Blocked on something only a human can do.\n\n${runbook}`);
-    const out = fail("blocked", summary, runbook);
+    const out = await park("blocked", summary, runbook);
     out.runbook = runbook;
     return out;
   }
@@ -200,7 +234,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   const dirty = git.dirtyPaths();
   if (dirty.length === 0) {
     await tracker.comment(ticket.id, `The engineer produced no diff.\n\n${summary}`);
-    return fail("no-change", summary, "the agent changed no files");
+    return park("no-change", summary, "the agent changed no files");
   }
 
   // The boundary check runs on the real diff, not on the agent's word for it (ADR 0002).
@@ -208,6 +242,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   if (violations.length > 0) {
     const detail = violations.map((v) => `${v.path} matches protected ${v.pattern}`).join("\n");
     await tracker.comment(ticket.id, `Refused to commit: the diff touched protected paths.\n\n${detail}`);
+    // Deliberately not parked: the branch keeps the offending diff so a person can look at it.
     return fail("out-of-bounds", "the diff touched protected paths, nothing was merged", detail);
   }
 
@@ -226,6 +261,8 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
       `no occurrence of ${flag} in the diff against ${base}`,
     );
     out.commitSHA = commitSHA;
+    // The branch keeps the commit so the next run resumes it; the tree goes back to base.
+    goHome();
     return out;
   }
 
@@ -240,6 +277,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
     const out = fail("gate-failed", "the quality gate failed, nothing was merged", summariseGate(gate));
     out.commitSHA = commitSHA;
     out.gate = gate;
+    goHome();
     return out;
   }
 
@@ -250,14 +288,30 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
     forbiddenCommands: config.boundaries.forbiddenCommands,
   });
 
+  if (!deploy.ok) {
+    /*
+     * Merged, but not on staging. This used to report `shipped`, record a pressable run and
+     * set the ticket Done - so the digest offered the human a production press for a build
+     * that had never deployed. The merge stands (the gate passed, and reverting it here would
+     * be a second failure mode); what does not stand is calling it shipped.
+     */
+    const detail =
+      `Merged into \`${base}\` at ${mergeSHA.slice(0, 7)}, but the staging deploy failed ` +
+      `(exit ${deploy.exitCode}):\n${deploy.output.split("\n").slice(-20).join("\n")}`;
+    await tracker.comment(ticket.id, detail);
+    goHome();
+    const out = fail("deploy-failed", "merged, but staging did not deploy", detail);
+    out.commitSHA = mergeSHA;
+    out.gate = gate;
+    return out;
+  }
+
   const detail = [
     summary,
     `Branch \`${branch}\` merged into \`${base}\` at ${mergeSHA.slice(0, 7)}, behind flag \`${flag}\` (default ${config.gate.featureFlags.defaultState}).`,
     changed.length > 0 ? `Changed: ${changed.map((c) => relative(".", c)).join(", ")}` : undefined,
     summariseGate(gate),
-    deploy.ok
-      ? `Deployed to staging${config.environments.staging.url ? `: ${config.environments.staging.url}` : ""}.`
-      : `Staging deploy FAILED (exit ${deploy.exitCode}):\n${deploy.output.split("\n").slice(-10).join("\n")}`,
+    `Deployed to staging${config.environments.staging.url ? `: ${config.environments.staging.url}` : ""}.`,
     anchorExtended ? `Anchor extended: ${anchorExtended}` : undefined,
     unsure ? `Unsure about: ${unsure}` : undefined,
   ]
@@ -276,6 +330,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
 
   await tracker.comment(ticket.id, detail);
   await tracker.setState(ticket.id, STATE.shipped);
+  goHome();
 
   const out: EngineerOutcome = {
     status: "shipped",

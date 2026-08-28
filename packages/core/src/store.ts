@@ -35,7 +35,13 @@ export interface Approval {
  *
  * The second - drift the anchor should have caught - is what `checkAnchor` counts.
  */
-export type SignalKind = "conflict" | "blocked" | "gate-failed" | "out-of-bounds" | "agent-failed";
+export type SignalKind =
+  | "conflict"
+  | "blocked"
+  | "gate-failed"
+  | "out-of-bounds"
+  | "agent-failed"
+  | "deploy-failed";
 
 export interface Signal {
   kind: SignalKind;

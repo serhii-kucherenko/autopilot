@@ -49,12 +49,56 @@ export function protectedViolations(changedPaths: string[], patterns: string[]):
 }
 
 /**
- * Whether a shell line uses a forbidden command. Whitespace in the line is collapsed
- * first, so `rm  -rf` and `rm\t-rf` cannot slip past a check written as `rm -rf`.
+ * One command line, split into its program and the set of short flag letters it carries.
+ *
+ * A plain substring test - what this used to be - is defeated by every spelling a person
+ * actually types: `rm -fr`, `rm -r -f`, `git push -f`. Comparing the program plus the *set* of
+ * flag letters catches all of those, which is what the documented guarantee needs.
+ */
+function shape(command: string): { program: string; flags: Set<string>; words: string[] } {
+  const words = command.trim().split(/\s+/).filter(Boolean);
+  const program = words[0] ?? "";
+  const flags = new Set<string>();
+  for (const word of words.slice(1)) {
+    if (word.startsWith("--")) flags.add(word.slice(2));
+    else if (word.startsWith("-") && word.length > 1) for (const letter of word.slice(1)) flags.add(letter);
+  }
+  return { program, flags, words };
+}
+
+/**
+ * Whether a shell line uses a forbidden command.
+ *
+ * Each `&&`, `||`, `;` or `|` separated segment is compared against each rule by program plus
+ * flags, so `rm -rf` also catches `rm -fr`, `rm  -r  -f` and `rm -r -f build`, and
+ * `git push --force` also catches `git push -f`.
  */
 export function forbiddenUse(command: string, forbidden: string[]): string | undefined {
-  const flat = command.replace(/\s+/g, " ");
-  return forbidden.find((f) => flat.includes(f.replace(/\s+/g, " ")));
+  const segments = command.split(/&&|\|\||[;|\n]/);
+
+  for (const rule of forbidden) {
+    const wanted = shape(rule);
+    if (wanted.program === "") continue;
+
+    for (const segment of segments) {
+      const seen = shape(segment);
+      if (seen.program !== wanted.program) continue;
+
+      // A rule's non-flag words after the program (`git push` in `git push --force`) must all
+      // appear, in order, so `git pull` does not match a rule about `git push`.
+      const wantedWords = wanted.words.slice(1).filter((w) => !w.startsWith("-"));
+      const seenWords = seen.words.slice(1).filter((w) => !w.startsWith("-"));
+      const wordsPresent = wantedWords.every((w, i) => seenWords[i] === w);
+      if (!wordsPresent) continue;
+
+      // `-f` and `--force` are the same intent, so a rule flag matches either spelling.
+      const flagsPresent = [...wanted.flags].every(
+        (flag) => seen.flags.has(flag) || seen.flags.has(flag[0]!) || [...seen.flags].some((f) => f[0] === flag[0]),
+      );
+      if (flagsPresent) return rule;
+    }
+  }
+  return undefined;
 }
 
 export class BoundaryError extends Error {

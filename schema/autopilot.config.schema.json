@@ -129,7 +129,11 @@
       "description": "What the loop may never touch on this product.",
       "additionalProperties": false,
       "properties": {
-        "protectedPaths": { "type": "array", "items": { "type": "string" } },
+        "protectedPaths": {
+          "type": "array",
+          "description": "Glob patterns the loop may never touch. A trailing `/` protects a whole subtree; `*` stays inside one path segment and `**` crosses them. Write `**/.env*`, not `.env*`: the latter protects only a root-level file. `autopilot check-anchor` skips these paths too.",
+          "items": { "type": "string" }
+        },
         "forbiddenCommands": { "type": "array", "items": { "type": "string" } },
         "maxTicketsInFlight": { "type": "integer", "default": 1, "minimum": 1 }
       }
@@ -140,7 +144,13 @@
       "properties": {
         "engineerInterval": { "type": "string", "description": "How often the continuity engine wakes, e.g. 30m" },
         "digest": { "type": "string", "description": "When the digest is sent, e.g. daily 08:00" },
-        "selfAuditOnEmptyBacklog": { "type": "boolean", "default": true }
+        "selfAuditOnEmptyBacklog": { "type": "boolean", "default": true },
+        "retentionDays": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 1,
+          "description": "How long an acknowledged bundle and its screenshots are kept. Bundles hold pictures of a running product, so this is a safety property rather than housekeeping. `autopilot loop` and `autopilot prune` both enforce it."
+        }
       }
     }
   }

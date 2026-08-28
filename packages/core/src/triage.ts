@@ -204,8 +204,14 @@ export async function runTriage(options: TriageOptions): Promise<TriageResult> {
     throw new ReplyError("triage produced no tickets and no question", result.text);
   }
 
-  const created: Ticket[] = [];
-  for (const raw of rawTickets) {
+  /*
+   * Every ticket is validated before any is created.
+   *
+   * Validating inside the write loop meant a reply whose third ticket lacked a title left the
+   * first two already filed in Linear while the run reported failure - and a re-run filed them
+   * a second time. Nothing here writes until the whole reply is known to be usable.
+   */
+  const planned: NewTicket[] = rawTickets.map((raw) => {
     const ticket: NewTicket = {
       title: requireString(raw, "title", result.text),
       description: ticketDescription(raw),
@@ -216,7 +222,11 @@ export async function runTriage(options: TriageOptions): Promise<TriageResult> {
       ? (raw.labels as unknown[]).filter((l): l is string => typeof l === "string")
       : [];
     if (labels.length > 0) ticket.labels = labels;
+    return ticket;
+  });
 
+  const created: Ticket[] = [];
+  for (const ticket of planned) {
     if (options.dryRun) {
       created.push({
         id: `(dry-run ${created.length + 1})`,
@@ -226,7 +236,7 @@ export async function runTriage(options: TriageOptions): Promise<TriageResult> {
         priority: ticket.priority,
         state: "Backlog",
         stateType: "backlog",
-        labels: labels,
+        labels: ticket.labels ?? [],
         blockedBy: [],
         createdAt: new Date().toISOString(),
       });

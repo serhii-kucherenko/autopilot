@@ -45,6 +45,7 @@ const COMMANDS = new Set([
   "digest",
   "release",
   "check-anchor",
+  "prune",
 ]);
 
 const USAGE = `autopilot - an engineering org where the AI builds and the human reviews
@@ -62,6 +63,7 @@ Commands
   digest                 write the digest of what landed on staging
   release <ticket>       deploy production. Refuses without a human approval for this commit
   check-anchor           find values the code uses that DESIGN.md never declared
+  prune                  delete acked bundles and their screenshots past the retention window
 
 Options
   --config <path>        autopilot.config.json for the product        (default ./autopilot.config.json)
@@ -197,6 +199,21 @@ async function main(argv: string[]): Promise<number> {
 
   try {
     switch (command) {
+      case "prune": {
+        const days = config.cadence.retentionDays;
+        if (dryRun) {
+          process.stdout.write(`(dry run) would delete acked bundles older than ${days} days.\n`);
+          return EXIT.nothing;
+        }
+        const gone = store.prune(days);
+        process.stdout.write(
+          gone === 0
+            ? `Nothing to delete. Acked bundles are kept for ${days} days.\n`
+            : `Deleted ${gone} acked bundle${gone === 1 ? "" : "s"} and their screenshots, past ${days} days.\n`,
+        );
+        return gone > 0 ? EXIT.did : EXIT.nothing;
+      }
+
       case "drain": {
         const undrained = store.undrained();
         if (undrained.length === 0) {
@@ -233,10 +250,21 @@ async function main(argv: string[]): Promise<number> {
         }
         if (result.question) process.stdout.write(`\nTriage asks: ${result.question}\n`);
 
-        // The ack is the only thing that marks a bundle drained, so it happens after the
-        // tickets exist. A run that dies before here simply runs again.
-        if (!isSay && !dryRun) {
+        /*
+         * The ack is the only thing that marks a bundle drained, so it happens after the
+         * tickets exist - and only if they do.
+         *
+         * Acking unconditionally drained a bundle whose triage returned nothing but a
+         * question, so the annotations disappeared from intake and nothing re-triaged them
+         * once the question was answered. The person did the work and got nothing, which
+         * `docs/intake.md` calls the worst possible failure.
+         */
+        if (!isSay && !dryRun && result.created.length > 0) {
           for (const bundle of input.bundles ?? []) store.ack(bundle.sessionID);
+        } else if (!isSay && result.created.length === 0) {
+          process.stdout.write(
+            "\nNothing was filed, so the bundle stays in intake. Answer the question and run triage again.\n",
+          );
         }
         return result.created.length > 0 || result.question ? EXIT.did : EXIT.nothing;
       }
@@ -279,6 +307,11 @@ async function main(argv: string[]): Promise<number> {
           ...(dryRun ? { dryRun: true } : {}),
           onCycle: (cycle) => process.stdout.write(`${cycle.message}\n`),
         });
+        if (report.pruned > 0) {
+          process.stdout.write(
+            `pruned ${report.pruned} acked bundle${report.pruned === 1 ? "" : "s"} past ${config.cadence.retentionDays} days\n`,
+          );
+        }
         return report.exitCode;
       }
 
@@ -375,7 +408,13 @@ export function writeStarterConfig(path: string, productName: string, repoRoot: 
     repo: { root: repoRoot, defaultBranch: "main", branchPrefix: "auto/" },
     environments: { staging: { deploy: "echo replace-me" } },
     gate: { commands: ["pnpm lint", "pnpm typecheck", "pnpm test"] },
-    boundaries: { protectedPaths: [".env*"], forbiddenCommands: ["git push --force", "rm -rf"], maxTicketsInFlight: 1 },
+    boundaries: {
+      // `**/` matters: a bare `.env*` protects only a root-level file, because `*` never
+      // crosses a slash. `apps/web/.env.local` would have sailed straight through.
+      protectedPaths: ["**/.env*", "**/*.pem", "**/id_rsa*"],
+      forbiddenCommands: ["git push --force", "rm -rf"],
+      maxTicketsInFlight: 1,
+    },
     cadence: { engineerInterval: "30m", digest: "daily 08:00", selfAuditOnEmptyBacklog: true },
   };
   writeFileSync(path, `${JSON.stringify(starter, null, 2)}\n`);

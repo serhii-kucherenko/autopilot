@@ -39,7 +39,9 @@ export interface Coherence {
 }
 
 export function coherenceOf(config: Config, signals: Signal[]): Coherence {
-  const anchor = checkAnchor({ root: config.repo.root });
+  // The same excludes `autopilot check-anchor` uses, or the number here would not match the
+  // command the digest tells the human to run.
+  const anchor = checkAnchor({ root: config.repo.root, exclude: config.boundaries.protectedPaths });
   return {
     conflicts: signals.filter((s) => s.kind === "conflict").length,
     anchorViolations: anchor.violations.length,

@@ -52,7 +52,8 @@ export async function runRelease(options: ReleaseOptions): Promise<ReleaseResult
   }
 
   const git = options.git ?? new Git(config.repo.root);
-  const head = git.head();
+  // The default branch, never `HEAD`. See Git.headOf.
+  const head = git.headOf(config.repo.defaultBranch);
   const run = store.runFor(ticketId);
 
   if (!run) {
@@ -122,8 +123,11 @@ export async function runRelease(options: ReleaseOptions): Promise<ReleaseResult
 
 /**
  * Record the human pressing production. Called by the console, never by a runner.
- * The commit is read here rather than taken from the caller, so the approval always binds
- * to what is actually on the default branch at the moment of the press.
+ *
+ * The commit is read here rather than taken from the caller, and it is read from the *default
+ * branch* rather than from `HEAD`. Reading `HEAD` was a real hole: a runner that stopped on a
+ * conflict leaves the repo on the ticket branch, and a press taken then would have approved a
+ * feature-branch commit nobody reviewed - the exact opposite of the guarantee.
  */
 export function pressProduction(options: {
   config: Config;
@@ -133,7 +137,7 @@ export function pressProduction(options: {
   git?: Git;
 }): { ticketId: string; commitSHA: string } {
   const git = options.git ?? new Git(options.config.repo.root);
-  const commitSHA = git.head();
+  const commitSHA = git.headOf(options.config.repo.defaultBranch);
   options.store.approve({ ticketId: options.ticketId, commitSHA, approvedBy: options.approvedBy });
   return { ticketId: options.ticketId, commitSHA };
 }

@@ -14,6 +14,7 @@ import { runDigest, plainDigest, describeCoherence } from "../src/digest.ts";
 import { runRelease, pressProduction } from "../src/release.ts";
 import { runLoop } from "../src/loop.ts";
 import { runEngineer } from "../src/engineer.ts";
+import { parseBundle } from "../src/bundle.ts";
 import { ReplyError } from "../src/reply.ts";
 
 function productRepo(): string {
@@ -448,4 +449,150 @@ test("a conflict is named in the plain digest, not only counted", () => {
   });
   assert.match(text, /AP-2 \[conflict\] the vision refuses a feed/);
   assert.match(text, /stopped on an anchor conflict: 1/);
+});
+
+test("a blocked ticket stops the run instead of being re-run every cycle", async () => {
+  const root = productRepo();
+  const t = tracker();
+  await t.create({ title: "blocked one", description: "", lane: "ai", priority: 1 });
+  await t.create({ title: "second", description: "", lane: "ai", priority: 2 });
+
+  const report = await runLoop({
+    config: config(root),
+    tracker: t,
+    agent: new FakeAgent([
+      reply({ outcome: "blocked", summary: "needs a key", runbook: "open the dashboard" }),
+      shipsCode("flag_ap_2"),
+    ]),
+    maxCycles: 5,
+  });
+
+  assert.equal(report.cycles.length, 1, "one runbook comment, not five");
+  assert.equal(report.exitCode, 1);
+  assert.deepEqual(await t.comments("AP-1"), (await t.comments("AP-1")).slice(0, 1));
+});
+
+test("a conflict does not stop the run; the loop takes the next ticket and skips the parked one", async () => {
+  const root = productRepo();
+  const t = tracker();
+  await t.create({ title: "conflicted", description: "", lane: "ai", priority: 1 });
+  await t.create({ title: "workable", description: "", lane: "ai", priority: 2 });
+
+  const report = await runLoop({
+    config: config(root),
+    tracker: t,
+    agent: new FakeAgent([
+      reply({ outcome: "conflict", summary: "no", conflict: "the anchor forbids it" }),
+      shipsCode("flag_ap_2"),
+      reply({ findings: [], nothingToDo: true }),
+    ]),
+    maxCycles: 4,
+  });
+
+  assert.deepEqual(
+    report.cycles.map((c) => [c.kind, c.engineer?.ticketId ?? null, c.engineer?.status ?? null]),
+    [
+      ["ticket", "AP-1", "conflict"],
+      ["ticket", "AP-2", "shipped"],
+      // AP-1 is back in the backlog but parked for this run, so the loop sees an empty queue
+      // and does the right thing with it rather than picking the conflict up again.
+      ["self-audit", null, null],
+    ],
+  );
+  assert.equal(report.exitCode, 0);
+});
+
+test("an agent that changes nothing stops the run rather than looping on it", async () => {
+  const root = productRepo();
+  const t = tracker();
+  await t.create({ title: "a", description: "", lane: "ai", priority: 1 });
+
+  const report = await runLoop({
+    config: config(root),
+    tracker: t,
+    agent: new FakeAgent([
+      reply({ outcome: "shipped", summary: "thought about it" }),
+      reply({ outcome: "shipped", summary: "thought about it again" }),
+    ]),
+    maxCycles: 3,
+  });
+
+  assert.equal(report.cycles.length, 1);
+  assert.equal(report.cycles[0]!.engineer?.status, "no-change");
+  assert.equal(report.exitCode, 1);
+});
+
+test("retention actually runs, because the loop is the only scheduled thing here", async () => {
+  const root = productRepo();
+  const s = store();
+  const bundle = parseBundle({
+    sessionID: "old",
+    app: { name: "Nimbus" },
+    annotations: [{ id: "old-a", comment: "something", trace: [] }],
+  });
+  s.put(bundle);
+  s.ack("old", "2020-01-01T00:00:00Z");
+
+  const report = await runLoop({
+    config: config(root),
+    tracker: tracker(),
+    agent: new FakeAgent([reply({ findings: [], nothingToDo: true })]),
+    store: s,
+    maxCycles: 1,
+  });
+
+  assert.equal(report.pruned, 1, "an acked bundle past the window is gone, screenshots and all");
+  assert.equal(s.get("old"), undefined);
+  s.close();
+});
+
+test("retention never touches an unacked bundle, however old, and a dry run deletes nothing", async () => {
+  const root = productRepo();
+  const s = store();
+  s.put(
+    parseBundle({
+      sessionID: "waiting",
+      app: { name: "Nimbus" },
+      annotations: [{ id: "w-a", comment: "something", trace: [] }],
+    }),
+    { receivedAt: "2019-01-01T00:00:00Z" },
+  );
+  s.put(
+    parseBundle({
+      sessionID: "acked",
+      app: { name: "Nimbus" },
+      annotations: [{ id: "a-a", comment: "something", trace: [] }],
+    }),
+  );
+  s.ack("acked", "2019-01-01T00:00:00Z");
+
+  const dry = await runLoop({
+    config: config(root),
+    tracker: tracker(),
+    agent: new FakeAgent([reply({ findings: [], nothingToDo: true })]),
+    store: s,
+    maxCycles: 1,
+    dryRun: true,
+  });
+  assert.equal(dry.pruned, 0, "a dry run must not delete anything");
+  assert.ok(s.get("acked"));
+
+  await runLoop({
+    config: config(root),
+    tracker: tracker(),
+    agent: new FakeAgent([reply({ findings: [], nothingToDo: true })]),
+    store: s,
+    maxCycles: 1,
+  });
+  assert.ok(s.get("waiting"), "nobody acked it, so it stays");
+  assert.equal(s.get("acked"), undefined);
+  s.close();
+});
+
+test("retentionDays comes from the config and defaults to thirty", () => {
+  assert.equal(config(productRepo()).cadence.retentionDays, 30);
+  assert.equal(
+    config(productRepo(), { cadence: { retentionDays: 7 } }).cadence.retentionDays,
+    7,
+  );
 });

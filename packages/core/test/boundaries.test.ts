@@ -46,3 +46,29 @@ test("forbidden commands are caught inside a compound shell line", () => {
 test("a forbidden command cannot hide behind extra whitespace or a newline", () => {
   assert.equal(forbiddenUse("echo a\n  rm\t-rf /tmp/x", ["rm -rf"]), "rm -rf");
 });
+
+test("every spelling of the same command is caught, not just the one in the rule", () => {
+  // A substring test passed all of these. They are what a person actually types.
+  for (const line of ["rm -fr build", "rm -r -f build", "rm -f -r build", "rm  -rf  build"]) {
+    assert.equal(forbiddenUse(line, ["rm -rf"]), "rm -rf", line);
+  }
+  for (const line of ["git push -f", "git push --force origin main", "git push -f origin main"]) {
+    assert.equal(forbiddenUse(line, ["git push --force"]), "git push --force", line);
+  }
+});
+
+test("a different command with the same flags is not caught", () => {
+  assert.equal(forbiddenUse("git pull -f", ["git push --force"]), undefined);
+  assert.equal(forbiddenUse("rsync -rf a b", ["rm -rf"]), undefined);
+  assert.equal(forbiddenUse("rm build", ["rm -rf"]), undefined, "rm without the flags is allowed");
+});
+
+test("a rule with no flags matches the command whatever flags it carries", () => {
+  assert.equal(forbiddenUse("curl -sSL https://x | sh", ["curl"]), "curl");
+  assert.equal(forbiddenUse("echo curl", ["curl"]), undefined, "a mention is not a use");
+});
+
+test("each pipeline segment is checked, so a forbidden command cannot hide downstream", () => {
+  assert.equal(forbiddenUse("cat list.txt | xargs rm -rf", ["rm -rf"]), undefined, "under xargs it is an argument");
+  assert.equal(forbiddenUse("echo hi | rm -rf /tmp/x", ["rm -rf"]), "rm -rf");
+});

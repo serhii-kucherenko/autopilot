@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { consoleFetch } from "../lib/console-token.ts";
 
 type State = "idle" | "sending" | "sent" | "failed";
 
@@ -21,11 +22,7 @@ export function FeedbackBox({ about }: { about?: string }) {
     if (text.trim() === "") return;
     setState("sending");
     try {
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, ...(about ? { about } : {}) }),
-      });
+      const response = await consoleFetch("/api/feedback", { text, ...(about ? { about } : {}) });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
         setState("failed");
