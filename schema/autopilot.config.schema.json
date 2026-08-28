@@ -135,7 +135,13 @@
           "items": { "type": "string" }
         },
         "forbiddenCommands": { "type": "array", "items": { "type": "string" } },
-        "maxTicketsInFlight": { "type": "integer", "default": 1, "minimum": 1 }
+        "maxTicketsInFlight": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 1,
+          "description": "Only 1 is implemented, and a higher value is refused rather than ignored. The loop is a single sequential runner: it resumes a started ticket before beginning another, so the count in flight is structurally 1. Parallelism today comes from running more products, not more tickets."
+        }
       }
     },
     "cadence": {

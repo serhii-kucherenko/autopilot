@@ -89,3 +89,18 @@ test("the checkout is found by walking up, not from import.meta, so a bundler ca
     forgetRepoRoot();
   }
 });
+
+test("maxTicketsInFlight above 1 is refused, not silently ignored", () => {
+  // The docs promised the cap was respected and nothing read it. A sequential runner cannot
+  // exceed 1, so the honest options were to build a worker pool or to fail loudly.
+  assert.throws(
+    () => parseConfig(minimal({ boundaries: { maxTicketsInFlight: 3 } })),
+    (e: Error) => {
+      assert.match(e.message, /only 1 is implemented/);
+      assert.match(e.message, /would be silently ignored/);
+      return true;
+    },
+  );
+  assert.equal(parseConfig(minimal({ boundaries: { maxTicketsInFlight: 1 } })).boundaries.maxTicketsInFlight, 1);
+  assert.equal(parseConfig(minimal()).boundaries.maxTicketsInFlight, 1);
+});

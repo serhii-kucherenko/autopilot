@@ -8,6 +8,7 @@ import { parseConfig } from "../src/config.ts";
 import { parseBundle } from "../src/bundle.ts";
 import { FakeAgent } from "../src/agent.ts";
 import { FileTracker } from "../src/tracker.ts";
+import { Store } from "../src/store.ts";
 import { ReplyError } from "../src/reply.ts";
 
 const config = parseConfig({
@@ -205,4 +206,66 @@ test("triage with neither a bundle nor text is a programming error", async () =>
     runTriage({ config, tracker: tracker(), agent: new FakeAgent([]), input: {} }),
     /given neither/,
   );
+});
+
+test("triaging the same bundle twice files nothing the second time", async () => {
+  // SER-622's stated Done-when, and it was not met: an explicit re-run of `triage <dir>`
+  // filed every ticket again. The device-generated sessionID plus the ack is the mechanism.
+  const root = mkdtempSync(join(tmpdir(), "ap-idem-"));
+  const store = new Store(root);
+  const t = new FileTracker(join(root, "tickets.json"));
+  const answer = reply({ tickets: [{ title: "Search is stale", lane: "ai", priority: 2 }] });
+
+  store.put(bundle);
+  const first = await runTriage({
+    config,
+    tracker: t,
+    agent: new FakeAgent([answer]),
+    input: { bundles: [bundle] },
+    store,
+  });
+  assert.equal(first.created.length, 1);
+  assert.deepEqual(first.alreadyTriaged, []);
+
+  store.ack(bundle.sessionID);
+
+  const second = await runTriage({
+    config,
+    tracker: t,
+    agent: new FakeAgent([answer]),
+    input: { bundles: [bundle] },
+    store,
+  });
+  assert.equal(second.created.length, 0, "a re-run must not duplicate");
+  assert.deepEqual(second.alreadyTriaged, [bundle.sessionID]);
+  assert.equal((await t.listAll()).length, 1);
+  store.close();
+});
+
+test("an unacked bundle is still triaged, so a crashed run can simply run again", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ap-idem-"));
+  const store = new Store(root);
+  const t = new FileTracker(join(root, "tickets.json"));
+  store.put(bundle);
+  // No ack: the previous run died before filing anything.
+  const result = await runTriage({
+    config,
+    tracker: t,
+    agent: new FakeAgent([reply({ tickets: [{ title: "x", lane: "ai", priority: 2 }] })]),
+    input: { bundles: [bundle] },
+    store,
+  });
+  assert.equal(result.created.length, 1);
+  store.close();
+});
+
+test("with no store there is nothing to check against, and triage still runs", async () => {
+  const result = await runTriage({
+    config,
+    tracker: tracker(),
+    agent: new FakeAgent([reply({ tickets: [{ title: "x", lane: "ai", priority: 2 }] })]),
+    input: { bundles: [bundle] },
+  });
+  assert.equal(result.created.length, 1);
+  assert.deepEqual(result.alreadyTriaged, []);
 });

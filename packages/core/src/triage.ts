@@ -12,6 +12,7 @@ import type { Config } from "./config.ts";
 import type { AgentRunner } from "./agent.ts";
 import { loadPrompt, renderPrompt } from "./agent.ts";
 import type { Lane, NewTicket, Ticket, Tracker } from "./tracker.ts";
+import type { Store } from "./store.ts";
 import { outputContract, parseReply, requireString, optionalString, ReplyError } from "./reply.ts";
 
 const TRIAGE_SHAPE = `
@@ -48,6 +49,8 @@ export interface TriageResult {
   question?: string;
   /** The agent's full answer, kept so a bad run is diagnosable. */
   raw: string;
+  /** Bundles skipped because they were already triaged and acked. */
+  alreadyTriaged: string[];
 }
 
 interface RawTicket {
@@ -148,16 +151,36 @@ export interface TriageOptions {
   agent: AgentRunner;
   input: TriageInput;
   dryRun?: boolean;
+  /**
+   * When given, a bundle that has already been acked is skipped rather than triaged again.
+   *
+   * This is what makes `autopilot triage <dir>` safe to re-run. The ack was already the only
+   * marker of "drained", but nothing consulted it on the way in, so running triage twice on
+   * the same session filed every ticket a second time. The device-generated `sessionID` is
+   * exactly what ADR 0004 says makes a retry safe; this is the read side of that.
+   */
+  store?: Store;
 }
 
 export async function runTriage(options: TriageOptions): Promise<TriageResult> {
-  const { config, tracker, agent, input } = options;
-  const bundles = input.bundles ?? [];
-  const annotationCount = bundles.reduce((n, b) => n + b.annotations.length, 0);
+  const { config, tracker, agent, input, store } = options;
+  const offered = input.bundles ?? [];
 
-  if (bundles.length === 0 && !input.text) {
+  if (offered.length === 0 && !input.text) {
     throw new Error("triage needs a bundle or some text; it was given neither");
   }
+
+  // Skip what has already been drained, so a re-run is a no-op rather than a duplicate.
+  const alreadyTriaged = store
+    ? offered.filter((b) => store.get(b.sessionID)?.ackedAt).map((b) => b.sessionID)
+    : [];
+  const bundles = offered.filter((b) => !alreadyTriaged.includes(b.sessionID));
+
+  if (offered.length > 0 && bundles.length === 0) {
+    return { created: [], linkedToExisting: [], raw: "", alreadyTriaged };
+  }
+
+  const annotationCount = bundles.reduce((n, b) => n + b.annotations.length, 0);
 
   const open = await tracker.listOpen();
   const body = renderPrompt(loadPrompt("triage"), {
@@ -251,7 +274,7 @@ export async function runTriage(options: TriageOptions): Promise<TriageResult> {
       )
     : [];
 
-  const out: TriageResult = { created, linkedToExisting: linked, raw: result.text };
+  const out: TriageResult = { created, linkedToExisting: linked, raw: result.text, alreadyTriaged };
   if (typeof reply.question === "string" && reply.question.trim() !== "") {
     out.question = reply.question.trim();
   }
