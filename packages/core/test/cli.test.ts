@@ -95,7 +95,8 @@ test("doctor names the fix for a missing Linear key, with the URL", () => {
     const text = formatDoctorReport(runDoctor({}));
     assert.match(text, /linear\.app\/settings\/account\/security/);
     assert.match(text, /export LINEAR_API_KEY/);
-    assert.match(text, /Not ready/);
+    assert.match(text, /Not ready for a real product/);
+    assert.match(text, /pnpm demo/, "a first-time reader must learn the demo needs none of this");
   } finally {
     if (before !== undefined) process.env.LINEAR_API_KEY = before;
   }

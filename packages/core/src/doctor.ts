@@ -175,6 +175,11 @@ export function formatDoctorReport(report: DoctorReport): string {
     "",
     report.ready
       ? "Ready. Run `autopilot loop --config <path>` to start, or add --dry-run to rehearse it."
-      : "Not ready. Fix the MISS lines above. Everything marked warn is optional.",
-  ].join("\n");
+      : "Not ready for a real product. Fix the MISS lines above; anything marked warn is optional.",
+    // Somebody reading this for the first time has nothing set up and no reason to know
+    // that the whole loop already runs without any of it.
+    report.ready ? "" : "Nothing above is needed for `pnpm demo`, which runs a full cycle offline.",
+  ]
+    .filter((line, index, all) => line !== "" || all[index - 1] !== "")
+    .join("\n");
 }
