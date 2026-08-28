@@ -194,7 +194,9 @@ function anchorCheck(configPath: string | undefined): Check | undefined {
       "is a prompt pointing at nothing. `docs/vision.md` is one paragraph: what the product is for " +
       "and what it refuses to be - it is what stops the loop building a feature that does not belong. " +
       "`docs/adr/` is the decision trail; start with the three decisions you would be most annoyed " +
-      "to see reversed. The loop runs without them and simply has less to push against.",
+      "to see reversed. `CONTEXT.md` is the product's vocabulary - a glossary and nothing else - so " +
+      "that two agents do not invent two words for one thing. The loop runs without any of them and " +
+      "simply has less to push against.",
   };
 }
 

@@ -436,7 +436,14 @@ if (invokedDirectly) {
 export function writeStarterConfig(path: string, productName: string, repoRoot: string): void {
   const starter = {
     $schema: "https://github.com/serhii-kucherenko/autopilot/schema/autopilot.config.schema.json",
-    product: { name: productName, vision: "docs/vision.md", anchors: ["DESIGN.md", "docs/adr/"] },
+    product: {
+      name: productName,
+      vision: "docs/vision.md",
+      // CONTEXT.md is in the default anchor for the reason ADR 0010 gives: a word that means
+      // two things is the same drift as a decision nobody recorded, and the agent can only
+      // use the product's words if it is told to read them.
+      anchors: ["DESIGN.md", "CONTEXT.md", "docs/adr/"],
+    },
     tracker: { kind: "linear", project: productName },
     repo: { root: repoRoot, defaultBranch: "main", branchPrefix: "auto/" },
     environments: { staging: { deploy: "echo replace-me" } },

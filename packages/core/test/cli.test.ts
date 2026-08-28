@@ -320,18 +320,20 @@ test("loop --dry-run prints the prompt, because that is the whole point of rehea
 
 test("doctor names each anchor file the product does not have, because the prompt sends the agent to read them", async () => {
   const { root, configPath } = workspace();
-  // The workspace has DESIGN.md and neither docs/adr/ nor docs/vision.md - Reco exactly.
+  // The workspace has DESIGN.md and none of the other three - Reco exactly.
   const report = runDoctor({ configPath, fake: true });
   const anchor = report.checks.find((c) => c.name === "anchor")!;
   assert.ok(anchor, "doctor must check the anchor at all");
   assert.equal(anchor.status, "warn", "the loop still runs; it just has less to push against");
   assert.match(anchor.detail, /docs\/adr\//);
   assert.match(anchor.detail, /docs\/vision\.md/);
+  assert.match(anchor.detail, /CONTEXT\.md/, "the glossary is anchored too (ADR 0010)");
   assert.doesNotMatch(anchor.detail, /DESIGN\.md/, "what exists is not a finding");
 
   mkdirSync(join(root, "docs", "adr"), { recursive: true });
   writeFileSync(join(root, "docs", "adr", "0001-x.md"), "# 0001\n");
   writeFileSync(join(root, "docs", "vision.md"), "Reco is for reading.\n");
+  writeFileSync(join(root, "CONTEXT.md"), "# Reco\n\n## Language\n\n**Shelf**:\nA row of books.\n");
   const full = runDoctor({ configPath, fake: true }).checks.find((c) => c.name === "anchor")!;
   assert.equal(full.status, "ok");
 });

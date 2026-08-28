@@ -16,6 +16,9 @@ going to answer questions for you, so decide from evidence and write down what y
 Load the anchor and hold it for the whole ticket:
 
 - `DESIGN.md` - how this product looks. Tokens only, never a raw value.
+- `CONTEXT.md` - the words this product uses. Name things the way it names them, in code,
+  in tests and in what you write back. A second word for an existing thing is drift, and
+  a term it lists under _Avoid_ is one somebody already rejected.
 - `docs/adr/` - why the architecture is what it is, and what was already rejected.
 - the product vision - what this product is for, and what it refuses to be.
 - `autopilot.config.json` - the quality bar and the boundaries.
