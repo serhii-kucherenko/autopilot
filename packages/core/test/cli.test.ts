@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -393,3 +393,34 @@ test("wake is documented, because an undocumented entry point is one nobody wire
   const { out } = await run(["help"]);
   assert.match(out, /\bwake\b/);
 });
+
+/*
+ * `check-anchor`'s exclude list is its own, not the agent's.
+ *
+ * It used to reuse `boundaries.protectedPaths`, on the reasoning that out of bounds for the
+ * loop is out of scope for the check. That held only while protectedPaths listed secrets and
+ * build output. The moment self-hosting protected first-party source - the gate, the runner,
+ * the prompts - the checker silently stopped scanning them: 44 files became 40 with no
+ * mention of it. Protecting a file from the agent says nothing about whether it uses a colour
+ * DESIGN.md never declared.
+ *
+ * A replacement `anchorCheck.exclude` field was written and then deleted: every tree it would
+ * have skipped is either already in the check's own SKIPPED_DIRECTORIES or does not exist in
+ * the repo that named it. A config field with no user is one more way for a checker to go
+ * quiet, which is the failure this test is about.
+ */
+test("protecting source from the agent does not remove it from the anchor check", async () => {
+  const { root, configPath } = workspace();
+  writeFileSync(join(root, "src", "guarded.css"), ".x { color: #ff00ff; }\n");
+
+  const config = JSON.parse(readFileSync(configPath, "utf8")) as {
+    boundaries: { protectedPaths: string[] };
+  };
+  config.boundaries.protectedPaths = [...config.boundaries.protectedPaths, "src/guarded.css"];
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  const { code, out } = await run(["check-anchor", "--config", configPath]);
+  assert.equal(code, EXIT.failed, `an undeclared colour must still be found. Output:\n${out}`);
+  assert.match(out, /guarded\.css/, "the file the agent may not edit is still checked");
+});
+

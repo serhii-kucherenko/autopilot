@@ -82,6 +82,25 @@ staging deploy installs onto a physical iPad attached to a Mac, so no hosted run
 
 To stop it: `launchctl bootout gui/$(id -u)/com.autopilot.wake`.
 
+### The log grows forever
+
+`StandardOutPath` appends and nothing rotates it. A wake writes a few lines, so this takes a
+long time to matter, but it never stops. Truncate it when you notice, or hand it to `newsyslog`:
+
+```bash
+: > .autopilot/wake.log                     # truncate now, safe while loaded
+```
+
+Deliberately not automated. A log rotator is a second scheduled thing to get wrong, and the
+file is inside `.autopilot/`, which is already the directory you delete to start clean.
+
+### Self-hosting protects itself
+
+When the product being built is Autopilot, `boundaries.protectedPaths` covers the gate, the
+boundary check, the engineer runner, the release path and `prompts/`. The loop cannot edit the
+code that decides whether the loop may ship, and it cannot rewrite its own instructions. It can
+still extend `DESIGN.md`, `CONTEXT.md` and `docs/adr/`, which is what the anchor is for.
+
 ### When it runs by hand and not from launchd
 
 Almost always one of three things, in this order:
