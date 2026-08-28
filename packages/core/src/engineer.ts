@@ -152,8 +152,20 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
     return fail("blocked", "the product repo is not a git repository", `no git repo at ${config.repo.root}`);
   }
 
-  /** A parked or failed ticket goes back to the backlog and the repo goes back to base. */
-  const park = async (status: EngineerStatus, summary: string, detail: string): Promise<EngineerOutcome> => {
+  /*
+   * End the run and put the working tree back on the default branch.
+   *
+   * Only a PARKED status also sends the ticket back to the backlog. A *failed* one
+   * (`gate-failed`, `agent-failed`, `out-of-bounds`, `deploy-failed`) deliberately stays
+   * `In Progress`, because ADR 0008 requires the next run to resume the same branch rather
+   * than start over. Parked and failed are different words here and mean different things.
+   *
+   * This comment used to say "a parked or failed ticket goes back to the backlog", which the
+   * code never did. It was wrong in the dangerous direction: an agent trusting it would
+   * "fix" the code to match and break resume. The old name for this helper was `park`,
+   * which is what let the comment drift - it is called for failures too.
+   */
+  const stopRun = async (status: EngineerStatus, summary: string, detail: string): Promise<EngineerOutcome> => {
     const outcome = fail(status, summary, detail);
     if (PARKED.includes(status)) await tracker.setState(ticket.id, STATE.backlog);
     goHome();
@@ -204,7 +216,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   const result = await agent.run({ prompt, cwd: config.repo.root, permissionMode: "acceptEdits" });
   if (!result.ok) {
     await tracker.comment(ticket.id, `The engineer run failed before producing a diff.\n\n${result.stderr ?? result.text}`);
-    return park("agent-failed", "the agent run failed", result.stderr ?? result.text);
+    return stopRun("agent-failed", "the agent run failed", result.stderr ?? result.text);
   }
 
   const reply = parseReply<Record<string, unknown>>(result.text);
@@ -218,7 +230,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   if (outcome === "conflict") {
     const conflict = optionalString(reply, "conflict") ?? summary;
     await tracker.comment(ticket.id, `Stopped on an anchor conflict, for the human to decide.\n\n${conflict}`);
-    const out = await park("conflict", summary, conflict);
+    const out = await stopRun("conflict", summary, conflict);
     out.conflict = conflict;
     return out;
   }
@@ -226,7 +238,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   if (outcome === "blocked") {
     const runbook = optionalString(reply, "runbook") ?? "no runbook was written, which is itself a bug";
     await tracker.comment(ticket.id, `Blocked on something only a human can do.\n\n${runbook}`);
-    const out = await park("blocked", summary, runbook);
+    const out = await stopRun("blocked", summary, runbook);
     out.runbook = runbook;
     return out;
   }
@@ -234,7 +246,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   const dirty = git.dirtyPaths();
   if (dirty.length === 0) {
     await tracker.comment(ticket.id, `The engineer produced no diff.\n\n${summary}`);
-    return park("no-change", summary, "the agent changed no files");
+    return stopRun("no-change", summary, "the agent changed no files");
   }
 
   // The boundary check runs on the real diff, not on the agent's word for it (ADR 0002).

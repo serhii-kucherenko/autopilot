@@ -3,13 +3,21 @@
   "product": {
     "name": "Reco",
     "vision": "docs/vision.md",
-    "anchors": ["DESIGN.md", "docs/adr/", "docs/vision.md"]
+    "anchors": [
+      "DESIGN.md",
+      "CONTEXT.md",
+      "docs/adr/",
+      "docs/vision.md"
+    ]
   },
   "tracker": {
     "kind": "linear",
     "project": "Reco",
     "team": "Core Team",
-    "laneLabels": { "ai": "lane:ai", "human": "lane:human" }
+    "laneLabels": {
+      "ai": "lane:ai",
+      "human": "lane:human"
+    }
   },
   "repo": {
     "root": ".",
@@ -26,11 +34,21 @@
     }
   },
   "gate": {
-    "commands": ["npm run lint", "npx tsc --noEmit", "npm test"],
-    "featureFlags": { "required": true, "defaultState": "off" }
+    "commands": [
+      "npm run lint",
+      "npx tsc --noEmit",
+      "npm test"
+    ],
+    "featureFlags": {
+      "required": true,
+      "defaultState": "off"
+    }
   },
   "capture": {
-    "loupe": { "enabled": true, "bundleDir": "~/.loupe/Reco" },
+    "loupe": {
+      "enabled": true,
+      "bundleDir": "~/.loupe/Reco"
+    },
     "conversational": true
   },
   "boundaries": {
@@ -41,7 +59,10 @@
       "public/pdfjs/",
       "ios/DerivedData*/"
     ],
-    "forbiddenCommands": ["git push --force", "rm -rf"],
+    "forbiddenCommands": [
+      "git push --force",
+      "rm -rf"
+    ],
     "maxTicketsInFlight": 1
   },
   "cadence": {
