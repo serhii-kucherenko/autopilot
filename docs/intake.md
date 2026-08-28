@@ -32,8 +32,9 @@ whenever it next runs.
 
 ## The service
 
-Four endpoints. Small enough to be one file, deployable on an existing box or as a
-serverless function.
+Four endpoints, as route handlers inside `apps/console` rather than a separate deployable
+(ADR 0003) - the console has to read the same bundles to show them. One app, one deploy, one
+token.
 
 | Endpoint | Who calls it | What it does |
 |---|---|---|
@@ -41,6 +42,10 @@ serverless function.
 | `GET /bundles?undrained` | agent | lists everything not yet acknowledged, oldest first |
 | `GET /bundles/:id` | agent | one bundle with its images, for triage |
 | `POST /bundles/:id/ack` | agent | marks it drained, once tickets exist |
+
+In code: `app/api/bundles/route.ts`, `app/api/bundles/[id]/route.ts`,
+`app/api/bundles/[id]/ack/route.ts`. Crops are served by `app/api/crops/[session]/[annotation]`
+rather than from a public directory, because they are screenshots of a running product.
 
 The ack is the only thing that marks a bundle done. A triage run that crashes halfway can
 simply run again.
