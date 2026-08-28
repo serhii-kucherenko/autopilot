@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cli, EXIT, writeStarterConfig } from "../src/cli.ts";
 import { runDoctor, formatDoctorReport } from "../src/doctor.ts";
+import { forgetRepoRoot } from "../src/paths.ts";
 import { Store } from "../src/store.ts";
 import { parseBundle } from "../src/bundle.ts";
 
@@ -83,16 +84,38 @@ test("an unknown command fails and shows what does exist", async () => {
 
 test("doctor with --fake needs no Linear key and says why", async () => {
   const { configPath } = workspace();
-  const { out } = await run(["doctor", "--config", configPath, "--fake"]);
-  assert.match(out, /LINEAR_API_KEY: not set, and not needed/);
-  assert.match(out, /node: v/);
+  /*
+   * Stated, not inherited. The CLI loads the checkout's own `.env` on every call, so on a
+   * machine that has a real key this test would otherwise assert the opposite of its name -
+   * and deleting the variable first does not help, because `cli()` puts it straight back.
+   * Pointing AUTOPILOT_HOME at a checkout with no `.env` is what actually controls it.
+   */
+  const emptyHome = mkdtempSync(join(tmpdir(), "ap-nokey-"));
+  mkdirSync(join(emptyHome, "prompts"), { recursive: true });
+  mkdirSync(join(emptyHome, "schema"), { recursive: true });
+  const priorHome = process.env.AUTOPILOT_HOME;
+  const prior = process.env.LINEAR_API_KEY;
+  process.env.AUTOPILOT_HOME = emptyHome;
+  delete process.env.LINEAR_API_KEY;
+  forgetRepoRoot();
+  try {
+    const { out } = await run(["doctor", "--config", configPath, "--fake"]);
+    assert.match(out, /LINEAR_API_KEY: not set, and not needed/);
+    assert.match(out, /node: v/);
+  } finally {
+    if (prior === undefined) delete process.env.LINEAR_API_KEY;
+    else process.env.LINEAR_API_KEY = prior;
+    if (priorHome === undefined) delete process.env.AUTOPILOT_HOME;
+    else process.env.AUTOPILOT_HOME = priorHome;
+    forgetRepoRoot();
+  }
 });
 
-test("doctor names the fix for a missing Linear key, with the URL", () => {
+test("doctor names the fix for a missing Linear key, with the URL", async () => {
   const before = process.env.LINEAR_API_KEY;
   delete process.env.LINEAR_API_KEY;
   try {
-    const text = formatDoctorReport(runDoctor({}));
+    const text = formatDoctorReport(await runDoctor({}));
     assert.match(text, /linear\.app\/settings\/account\/security/);
     assert.match(text, /export LINEAR_API_KEY/);
     assert.match(text, /Not ready for a real product/);
@@ -102,11 +125,11 @@ test("doctor names the fix for a missing Linear key, with the URL", () => {
   }
 });
 
-test("doctor rejects a config whose repo.root does not exist", () => {
+test("doctor rejects a config whose repo.root does not exist", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ap-doc-"));
   const path = join(dir, "autopilot.config.json");
   writeStarterConfig(path, "Ghost", join(dir, "no-such-repo"));
-  const report = runDoctor({ configPath: path, fake: true });
+  const report = await runDoctor({ configPath: path, fake: true });
   const config = report.checks.find((c) => c.name === "autopilot.config.json")!;
   assert.equal(config.status, "missing");
   assert.match(config.detail, /does not exist/);
@@ -224,11 +247,11 @@ test("--cycles must be a whole number", async () => {
   assert.match(err, /whole number/);
 });
 
-test("the starter config it writes is valid against the schema", () => {
+test("the starter config it writes is valid against the schema", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ap-starter-"));
   const path = join(dir, "autopilot.config.json");
   writeStarterConfig(path, "Reco", dir);
-  const report = runDoctor({ configPath: path, fake: true });
+  const report = await runDoctor({ configPath: path, fake: true });
   assert.equal(report.checks.find((c) => c.name === "autopilot.config.json")!.status, "ok");
 });
 
@@ -321,7 +344,7 @@ test("loop --dry-run prints the prompt, because that is the whole point of rehea
 test("doctor names each anchor file the product does not have, because the prompt sends the agent to read them", async () => {
   const { root, configPath } = workspace();
   // The workspace has DESIGN.md and none of the other three - Reco exactly.
-  const report = runDoctor({ configPath, fake: true });
+  const report = await runDoctor({ configPath, fake: true });
   const anchor = report.checks.find((c) => c.name === "anchor")!;
   assert.ok(anchor, "doctor must check the anchor at all");
   assert.equal(anchor.status, "warn", "the loop still runs; it just has less to push against");
@@ -334,7 +357,7 @@ test("doctor names each anchor file the product does not have, because the promp
   writeFileSync(join(root, "docs", "adr", "0001-x.md"), "# 0001\n");
   writeFileSync(join(root, "docs", "vision.md"), "Reco is for reading.\n");
   writeFileSync(join(root, "CONTEXT.md"), "# Reco\n\n## Language\n\n**Shelf**:\nA row of books.\n");
-  const full = runDoctor({ configPath, fake: true }).checks.find((c) => c.name === "anchor")!;
+  const full = (await runDoctor({ configPath, fake: true })).checks.find((c) => c.name === "anchor")!;
   assert.equal(full.status, "ok");
 });
 
@@ -424,3 +447,120 @@ test("protecting source from the agent does not remove it from the anchor check"
   assert.match(out, /guarded\.css/, "the file the agent may not edit is still checked");
 });
 
+
+/*
+ * `.env` in the Autopilot checkout is read, because that is where people put a key.
+ *
+ * Serhii added `LINEAR_API_KEY` to `repo/.env` - the obvious place, already gitignored - and
+ * `doctor` still said `not set`, because nothing loaded the file. Telling a person their
+ * correct instinct was wrong is worse than reading the file.
+ *
+ * A real environment variable still wins, which is what `process.loadEnvFile` does natively,
+ * so a plist or an exported value overrides a stale file rather than the other way round.
+ */
+test("a key in the checkout's .env is picked up, and a real env var still beats it", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ap-home-"));
+  mkdirSync(join(home, "prompts"), { recursive: true });
+  mkdirSync(join(home, "schema"), { recursive: true });
+  writeFileSync(join(home, ".env"), "AUTOPILOT_ENV_PROBE=from_the_file\n");
+
+  const priorHome = process.env.AUTOPILOT_HOME;
+  const priorProbe = process.env.AUTOPILOT_ENV_PROBE;
+  process.env.AUTOPILOT_HOME = home;
+  delete process.env.AUTOPILOT_ENV_PROBE;
+  forgetRepoRoot();
+  try {
+    await run(["help"]);
+    assert.equal(process.env.AUTOPILOT_ENV_PROBE, "from_the_file", "the checkout's .env must be read");
+
+    process.env.AUTOPILOT_ENV_PROBE = "from_the_real_environment";
+    forgetRepoRoot();
+    await run(["help"]);
+    assert.equal(
+      process.env.AUTOPILOT_ENV_PROBE,
+      "from_the_real_environment",
+      "an exported value or a plist entry must win over a stale file",
+    );
+  } finally {
+    if (priorHome === undefined) delete process.env.AUTOPILOT_HOME;
+    else process.env.AUTOPILOT_HOME = priorHome;
+    if (priorProbe === undefined) delete process.env.AUTOPILOT_ENV_PROBE;
+    else process.env.AUTOPILOT_ENV_PROBE = priorProbe;
+    forgetRepoRoot();
+  }
+});
+
+test("a checkout with no .env is not an error", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ap-home-"));
+  mkdirSync(join(home, "prompts"), { recursive: true });
+  mkdirSync(join(home, "schema"), { recursive: true });
+  const prior = process.env.AUTOPILOT_HOME;
+  process.env.AUTOPILOT_HOME = home;
+  forgetRepoRoot();
+  try {
+    const { code } = await run(["help"]);
+    assert.equal(code, EXIT.did, "a missing .env is the normal case, not a failure");
+  } finally {
+    if (prior === undefined) delete process.env.AUTOPILOT_HOME;
+    else process.env.AUTOPILOT_HOME = prior;
+    forgetRepoRoot();
+  }
+});
+
+/*
+ * `doctor` must say whether the key WORKS, not whether the variable exists.
+ *
+ * A key was added to `.env`, doctor said `set`, and proving it actually reached Linear needed
+ * a hand-written probe. A typo'd or revoked key passes an existence check and then fails on a
+ * schedule at 3am with nobody watching, which is the exact situation doctor exists to prevent.
+ *
+ * The probe is injected so the suite stays offline. That property is stated in the README and
+ * is worth more than the convenience of a real call in a test.
+ */
+test("doctor reports a key that is present but rejected, rather than calling it ok", async () => {
+  const { configPath } = workspace();
+  const report = await runDoctor({
+    configPath,
+    apiKey: "lin_api_wrong",
+    probeTracker: () => Promise.resolve({ ok: false, detail: "Linear rejected the key (401)" }),
+  });
+  const check = report.checks.find((c) => c.name === "LINEAR_API_KEY")!;
+  assert.equal(check.status, "missing", "a rejected key is not a working setup");
+  assert.match(check.detail, /rejected/i);
+});
+
+test("doctor says the key reached the tracker when it did, and names the project", async () => {
+  const { configPath } = workspace();
+  const report = await runDoctor({
+    configPath,
+    apiKey: "lin_api_right",
+    probeTracker: () => Promise.resolve({ ok: true, detail: "reached Linear, 1 open ticket in Reco" }),
+  });
+  const check = report.checks.find((c) => c.name === "LINEAR_API_KEY")!;
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /reached Linear/);
+});
+
+test("doctor does not fail a setup just because the network is down", async () => {
+  const { configPath } = workspace();
+  const report = await runDoctor({
+    configPath,
+    apiKey: "lin_api_right",
+    probeTracker: () => Promise.reject(new Error("getaddrinfo ENOTFOUND api.linear.app")),
+  });
+  const check = report.checks.find((c) => c.name === "LINEAR_API_KEY")!;
+  assert.equal(check.status, "warn", "unreachable is not the same as wrong");
+  assert.match(check.detail, /could not be checked|ENOTFOUND/i);
+  /*
+   * The property is that THIS check does not block, not that the whole report is ready.
+   * Asserting `report.ready` made the test depend on the machine: CI has no `claude` CLI, so
+   * readiness is false there for a reason this test is not about. Readiness is
+   * `every(status !== "missing")`, so a warn not appearing in the missing list is the whole
+   * claim, and it holds on any machine.
+   */
+  assert.deepEqual(
+    report.checks.filter((c) => c.status === "missing").map((c) => c.name).filter((n) => n === "LINEAR_API_KEY"),
+    [],
+    "a warn must never be counted as missing",
+  );
+});
