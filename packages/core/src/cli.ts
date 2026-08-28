@@ -184,8 +184,22 @@ async function main(argv: string[]): Promise<number> {
     const cfg = existsSync(path) ? loadConfig(path) : undefined;
     const report = checkAnchor({
       root: resolve(cfg?.repo.root ?? "."),
-      // Out of bounds for the loop means out of scope for this check too.
-      ...(cfg ? { exclude: cfg.boundaries.protectedPaths } : {}),
+      /*
+       * Nothing from the config narrows this, deliberately.
+       *
+       * It used to pass `boundaries.protectedPaths`, reasoning that out of bounds for the loop
+       * is out of scope for the check. That held only while protectedPaths listed secrets and
+       * build output. When self-hosting protected first-party source - the gate, the runner,
+       * the prompts - the checker silently stopped scanning them, and 44 files became 40 with
+       * no mention of it. Whether the agent may edit a file says nothing about whether the
+       * file has to keep the design system.
+       *
+       * A replacement `anchorCheck.exclude` field was written and then deleted: every tree it
+       * would have skipped is either already in `SKIPPED_DIRECTORIES` or does not exist. A
+       * config field with no user is one more way for a checker to go quiet, which is the
+       * failure this comment is about. `checkAnchor` still takes `exclude` for callers that
+       * genuinely need it; the config does not reach it.
+       */
     });
     process.stdout.write(`${formatAnchorReport(report)}\n`);
     // A checker exits 0 when it passes. It is the one command that does not use `nothing`

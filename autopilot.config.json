@@ -49,7 +49,12 @@
     "protectedPaths": [
       "**/.env*",
       ".github/workflows/**",
-      "schema/**"
+      "schema/**",
+      "packages/core/src/boundaries.ts",
+      "packages/core/src/gate.ts",
+      "packages/core/src/engineer.ts",
+      "packages/core/src/release.ts",
+      "prompts/**"
     ],
     "forbiddenCommands": [
       "rm -rf",

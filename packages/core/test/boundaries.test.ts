@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { protectedViolations, forbiddenUse, matchesPattern } from "../src/boundaries.ts";
 
 const PROTECTED = ["ios/Secrets/", ".env*", "fastlane/match/", "**/*.pem"];
@@ -71,4 +72,46 @@ test("a rule with no flags matches the command whatever flags it carries", () =>
 test("each pipeline segment is checked, so a forbidden command cannot hide downstream", () => {
   assert.equal(forbiddenUse("cat list.txt | xargs rm -rf", ["rm -rf"]), undefined, "under xargs it is an argument");
   assert.equal(forbiddenUse("echo hi | rm -rf /tmp/x", ["rm -rf"]), "rm -rf");
+});
+
+/*
+ * Self-hosting: the loop must not be able to weaken the loop.
+ *
+ * ADR 0008's argument is that an agent asked to run its own gate can pass by lowering it -
+ * skip the slow suite, mark a test todo, merge anyway. Running Autopilot on Autopilot hands
+ * that agent the source of the gate, the boundary check and the runner, and the gate then
+ * executes the weakened version of itself. The config shipped without protecting any of them.
+ *
+ * This test reads the real config rather than a fixture, because the hole was in the config
+ * and a fixture would have passed while the shipped file was wrong.
+ */
+test("Autopilot's own config forbids the agent editing the code that enforces the rules", () => {
+  const config = JSON.parse(readFileSync(new URL("../../../autopilot.config.json", import.meta.url), "utf8")) as {
+    boundaries: { protectedPaths: string[] };
+  };
+  const guarded = [
+    "packages/core/src/boundaries.ts",
+    "packages/core/src/gate.ts",
+    "packages/core/src/engineer.ts",
+    "packages/core/src/release.ts",
+    "prompts/engineer.md",
+  ];
+  for (const path of guarded) {
+    assert.deepEqual(
+      protectedViolations([path], config.boundaries.protectedPaths).map((v) => v.path),
+      [path],
+      `${path} decides whether the loop may ship. The loop must not be able to edit it.`,
+    );
+  }
+});
+
+test("self-hosting still lets the agent extend the anchor, which is the point of the anchor", () => {
+  const config = JSON.parse(readFileSync(new URL("../../../autopilot.config.json", import.meta.url), "utf8")) as {
+    boundaries: { protectedPaths: string[] };
+  };
+  // prompts/engineer.md tells the agent to add a token or an ADR in the same change that
+  // outgrows the anchor. Protecting these would forbid the behaviour the prompt requires.
+  for (const path of ["DESIGN.md", "CONTEXT.md", "docs/adr/0011-something-new.md", "packages/core/src/triage.ts"]) {
+    assert.deepEqual(protectedViolations([path], config.boundaries.protectedPaths), [], `${path} must stay editable`);
+  }
 });

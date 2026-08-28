@@ -4,7 +4,13 @@
   "title": "Autopilot product config",
   "description": "One file per product. Everything the loop needs to know that is specific to this codebase. Nothing in the prompts is product-specific; this file is where the difference lives.",
   "type": "object",
-  "required": ["product", "tracker", "repo", "environments", "gate"],
+  "required": [
+    "product",
+    "tracker",
+    "repo",
+    "environments",
+    "gate"
+  ],
   "additionalProperties": false,
   "properties": {
     "$schema": {
@@ -13,10 +19,15 @@
     },
     "product": {
       "type": "object",
-      "required": ["name", "vision"],
+      "required": [
+        "name",
+        "vision"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "vision": {
           "type": "string",
           "description": "Path to the product vision doc, or the vision itself in one paragraph. Part of the coherence anchor: the engineer reads it before planning."
@@ -24,59 +35,107 @@
         "anchors": {
           "type": "array",
           "description": "Extra files the engineer must read before planning. DESIGN.md and docs/adr are assumed.",
-          "items": { "type": "string" },
-          "default": ["DESIGN.md", "docs/adr/"]
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "DESIGN.md",
+            "docs/adr/"
+          ]
         }
       }
     },
     "tracker": {
       "type": "object",
-      "required": ["kind", "project"],
+      "required": [
+        "kind",
+        "project"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "type": "string", "enum": ["linear"] },
-        "project": { "type": "string", "description": "Linear project name or id" },
-        "team": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "linear"
+          ]
+        },
+        "project": {
+          "type": "string",
+          "description": "Linear project name or id"
+        },
+        "team": {
+          "type": "string"
+        },
         "laneLabels": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "ai": { "type": "string", "default": "lane:ai" },
-            "human": { "type": "string", "default": "lane:human" }
+            "ai": {
+              "type": "string",
+              "default": "lane:ai"
+            },
+            "human": {
+              "type": "string",
+              "default": "lane:human"
+            }
           }
         }
       }
     },
     "repo": {
       "type": "object",
-      "required": ["root", "defaultBranch"],
+      "required": [
+        "root",
+        "defaultBranch"
+      ],
       "additionalProperties": false,
       "properties": {
-        "root": { "type": "string" },
-        "defaultBranch": { "type": "string", "default": "main" },
-        "branchPrefix": { "type": "string", "default": "auto/" }
+        "root": {
+          "type": "string"
+        },
+        "defaultBranch": {
+          "type": "string",
+          "default": "main"
+        },
+        "branchPrefix": {
+          "type": "string",
+          "default": "auto/"
+        }
       }
     },
     "environments": {
       "type": "object",
-      "required": ["staging"],
+      "required": [
+        "staging"
+      ],
       "additionalProperties": false,
       "properties": {
         "staging": {
           "type": "object",
-          "required": ["deploy"],
+          "required": [
+            "deploy"
+          ],
           "additionalProperties": false,
           "properties": {
-            "deploy": { "type": "string", "description": "Command or workflow that deploys to staging" },
-            "url": { "type": "string" }
+            "deploy": {
+              "type": "string",
+              "description": "Command or workflow that deploys to staging"
+            },
+            "url": {
+              "type": "string"
+            }
           }
         },
         "production": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "deploy": { "type": "string" },
-            "url": { "type": "string" },
+            "deploy": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
             "requiresHumanApproval": {
               "type": "boolean",
               "default": true,
@@ -89,20 +148,34 @@
     "gate": {
       "type": "object",
       "description": "The quality gate. Every command must pass before the engineer may merge.",
-      "required": ["commands"],
+      "required": [
+        "commands"
+      ],
       "additionalProperties": false,
       "properties": {
         "commands": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         },
         "featureFlags": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "required": { "type": "boolean", "default": true },
-            "defaultState": { "type": "string", "enum": ["on", "off"], "default": "off" }
+            "required": {
+              "type": "boolean",
+              "default": true
+            },
+            "defaultState": {
+              "type": "string",
+              "enum": [
+                "on",
+                "off"
+              ],
+              "default": "off"
+            }
           }
         }
       }
@@ -116,12 +189,24 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
-            "bundleDir": { "type": "string", "description": "Where FileTransport writes, e.g. ~/.loupe/Reco" },
-            "endpoint": { "type": "string", "description": "Intake URL when using HTTPTransport" }
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "bundleDir": {
+              "type": "string",
+              "description": "Where FileTransport writes, e.g. ~/.loupe/Reco"
+            },
+            "endpoint": {
+              "type": "string",
+              "description": "Intake URL when using HTTPTransport"
+            }
           }
         },
-        "conversational": { "type": "boolean", "default": true }
+        "conversational": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "boundaries": {
@@ -132,9 +217,16 @@
         "protectedPaths": {
           "type": "array",
           "description": "Glob patterns the loop may never touch. A trailing `/` protects a whole subtree; `*` stays inside one path segment and `**` crosses them. Write `**/.env*`, not `.env*`: the latter protects only a root-level file. `autopilot check-anchor` skips these paths too.",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
-        "forbiddenCommands": { "type": "array", "items": { "type": "string" } },
+        "forbiddenCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "maxTicketsInFlight": {
           "type": "integer",
           "default": 1,
@@ -148,9 +240,18 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "engineerInterval": { "type": "string", "description": "How often the continuity engine wakes, e.g. 30m" },
-        "digest": { "type": "string", "description": "When the digest is sent, e.g. daily 08:00" },
-        "selfAuditOnEmptyBacklog": { "type": "boolean", "default": true },
+        "engineerInterval": {
+          "type": "string",
+          "description": "How often the continuity engine wakes, e.g. 30m"
+        },
+        "digest": {
+          "type": "string",
+          "description": "When the digest is sent, e.g. daily 08:00"
+        },
+        "selfAuditOnEmptyBacklog": {
+          "type": "boolean",
+          "default": true
+        },
         "retentionDays": {
           "type": "integer",
           "default": 30,

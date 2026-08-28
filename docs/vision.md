@@ -32,6 +32,11 @@ idle loop is a correct outcome.
 **A thing you have to visit.** A digest that only exists on a screen somebody must open is a
 digest nobody reads. Silence when nothing happened, one message when something did.
 
+**Able to lower its own bar.** When Autopilot builds Autopilot, the gate, the boundary check,
+the engineer runner, the release path and the prompts are all out of bounds to the agent. The
+loop cannot edit the code that decides whether the loop may ship, and it cannot rewrite the
+instructions it is judged by. A human changes those.
+
 **Cleverer than its anchor.** Every ticket is planned against `DESIGN.md`, `CONTEXT.md`, the
 decision trail and this file. An agent that cannot read why a choice was made will relitigate it,
 so the anchor is loaded before the plan, every time, and extended in the same change that outgrows
