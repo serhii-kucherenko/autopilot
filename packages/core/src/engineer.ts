@@ -69,10 +69,18 @@ export interface EngineerOptions {
   git?: Git;
 }
 
-/** States the runner moves a ticket through. Named here so nothing invents a new one. */
+/**
+ * States the runner moves a ticket through. Named here so nothing invents a new one.
+ *
+ * `shipped` is `Done`, not `In Review`, and that is deliberate. Landing on staging behind a
+ * flag is the whole of the loop's job for a ticket; the production press is recorded as an
+ * approval, not as ticket state, and human feedback becomes *new* tickets
+ * (`docs/flow.md`). An `In Review` state would also be `started` in Linear's model, which
+ * means `pickNext` would resume it forever and the loop would never reach ticket two.
+ */
 export const STATE = {
   working: "In Progress",
-  review: "In Review",
+  shipped: "Done",
   backlog: "Backlog",
 } as const;
 
@@ -250,7 +258,7 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
   });
 
   await tracker.comment(ticket.id, detail);
-  await tracker.setState(ticket.id, STATE.review);
+  await tracker.setState(ticket.id, STATE.shipped);
 
   const out: EngineerOutcome = {
     status: "shipped",

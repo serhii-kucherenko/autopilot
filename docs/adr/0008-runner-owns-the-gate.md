@@ -47,6 +47,16 @@ matters: a change is only behind a flag if the flag is in the change.
 - **Runner runs the gate, agent merges.** Two owners of one step. The agent would still be
   the last word.
 
+## A shipped ticket is `Done`, not `In Review`
+
+Landing on staging behind a flag is the whole of the loop's job for one ticket. The
+production press is recorded as an approval bound to a commit, not as ticket state, and
+human feedback becomes *new* tickets (`docs/flow.md`), never a reopened one.
+
+The first version used `In Review`, and a test caught why that cannot work: Linear models
+`In Review` as a `started` state, so `pickNext` resumed it on every wake and the loop never
+reached the second ticket.
+
 ## Consequences
 
 - The engineer prompt must say the runner commits, or the agent commits and the runner

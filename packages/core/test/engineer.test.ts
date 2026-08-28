@@ -105,7 +105,7 @@ test("one ticket goes from backlog to staging, behind a flag, and the queue refl
   assert.ok(existsSync(join(root, "STAGING_DEPLOYED")), "staging must actually be deployed");
   assert.equal(existsSync(join(root, "PRODUCTION_WAS_DEPLOYED")), false, "production is never the loop's to press");
 
-  assert.equal((await t.get(created.id))?.state, "In Review");
+  assert.equal((await t.get(created.id))?.state, "Done", "staging behind a flag is the whole of the loop's job");
   const comments = await t.comments(created.id);
   assert.match(comments.join("\n"), /merged into `main`/);
   assert.match(comments.join("\n"), /Deployed to staging: https:\/\/staging\.reco/);
