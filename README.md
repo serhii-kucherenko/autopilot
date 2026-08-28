@@ -112,7 +112,9 @@ pnpm autopilot loop   --config path/to/autopilot.config.json   # one cycle. --dr
 | `check-anchor` | values the code uses that `DESIGN.md` never declared |
 | `prune` | delete acked bundles and their screenshots past the retention window |
 
-`--dry-run` on everything that writes. `--fake` runs any of them fully offline.
+`--dry-run` on everything that writes. On `loop` and `engineer` it prints the exact prompt the
+agent would receive and spends no model call, which is how you decide whether to trust the loop
+with a product before it touches one. `--fake` runs any of them fully offline.
 
 Two environment variables, both fail-closed: `AUTOPILOT_INTAKE_TOKEN` for uploading bundles and
 `AUTOPILOT_CONSOLE_TOKEN` for the console's own writes. The console has **no user

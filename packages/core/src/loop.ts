@@ -123,7 +123,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopReport> {
       if (STOP_AFTER.includes(engineer.status)) {
         // Do not march on to the next ticket after a failure. The loop would bury the one
         // thing worth reading under the next five cycles.
-        return { cycles, exitCode: 1, pruned };
+        //
+        // A dry run always lands here, because it reports `no-change` by definition: it did
+        // not run the agent. It stops for the same reason, but it did not fail, so it must
+        // not claim exit 1. A person rehearsing before they trust the loop with their
+        // product should not be told the rehearsal broke.
+        return { cycles, exitCode: options.dryRun ? 2 : 1, pruned };
       }
       if (engineer.status === "conflict") parked.add(ticket.id);
       exitCode = 0;
