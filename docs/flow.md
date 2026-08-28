@@ -35,6 +35,20 @@ sequenceDiagram
     end
 ```
 
+## Where each stage lives
+
+| Stage | Code | Command |
+|---|---|---|
+| Capture | [Loupe](https://github.com/serhii-kucherenko/loupe), and `apps/console/app/api/bundles/` for the intake | - |
+| Triage | `packages/core/src/triage.ts` | `autopilot triage`, `autopilot say` |
+| Lanes | a label, written by triage | - |
+| Execute | `packages/core/src/engineer.ts`, `gate.ts`, `git.ts` | `autopilot engineer`, `autopilot loop` |
+| Review | `packages/core/src/digest.ts`, `apps/console/app/digest/` | `autopilot digest` |
+| Release | `packages/core/src/release.ts`, the press in the console | `autopilot release` |
+
+The runner in each case assembles what the prompt is given and writes what the prompt decided.
+The judgment is in `prompts/`; the boundaries are in the code (ADR 0008).
+
 ## The six stages
 
 ### 1. Capture

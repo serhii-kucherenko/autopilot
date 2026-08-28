@@ -1,0 +1,124 @@
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: Cobalt (+ dark)
+ * enrichment: none (real data is the content) · nav: N13 inline ⌘K-pill · footer: Ft2 inline line
+ * pre-emit critique: P5 H4 E4 S5 R5 V4
+ *
+ * Every value here appears in a table in /DESIGN.md. `autopilot check-anchor` reads that file
+ * and fails on any value it cannot find there, so the two cannot drift.
+ */
+
+:root {
+  /* Colour - light */
+  --color-paper: oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(96.5% 0.006 252);
+  --color-paper-3: oklch(94% 0.008 252);
+  --color-ink: oklch(24% 0.02 258);
+  --color-ink-2: oklch(34% 0.018 257);
+  --color-ink-3: oklch(52% 0.014 256);
+  --color-rule: oklch(89% 0.008 252);
+  --color-rule-strong: oklch(82% 0.01 252);
+  --color-accent: oklch(58% 0.2 256);
+  --color-accent-hover: oklch(50% 0.19 256);
+  --color-accent-wash: oklch(95% 0.03 256);
+  --color-graphite: oklch(22% 0.016 260);
+  --color-graphite-2: oklch(27% 0.016 260);
+  --color-graphite-ink: oklch(93% 0.008 250);
+  --color-ok: oklch(58% 0.13 155);
+  --color-ok-wash: oklch(95% 0.03 155);
+  --color-danger: oklch(55% 0.19 25);
+  --color-danger-wash: oklch(95% 0.035 25);
+
+  /* Type - every face has a real fallback, because the demo must run offline */
+  --font-display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: Inter, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --text-xs: 0.64rem;
+  --text-sm: 0.8rem;
+  --text-base: 1rem;
+  --text-md: 1.25rem;
+  --text-lg: 1.5625rem;
+  --text-xl: 1.9531rem;
+  --text-2xl: 2.4414rem;
+
+  /* Space - 4pt base, nine steps */
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  /* Radii and rules */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-round: 999px;
+  --rule-hair: 1px;
+  --rule-focus: 2px;
+
+  /* The complete list of shadows. A third is a bug. */
+  --shadow-lift: 0 1px 2px oklch(24% 0.02 258 / 0.06);
+  --shadow-overlay: 0 8px 32px oklch(24% 0.02 258 / 0.14);
+
+  /* Motion */
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  color-scheme: light dark;
+}
+
+/*
+ * Dark. Same token names, same roles, only the values change - so nothing in the app
+ * branches on theme. `:root:not([data-theme="light"])` so an explicit light choice still
+ * wins over the system preference.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-paper: oklch(17% 0.014 260);
+    --color-paper-2: oklch(21% 0.015 260);
+    --color-paper-3: oklch(25% 0.016 260);
+    --color-ink: oklch(95% 0.006 250);
+    --color-ink-2: oklch(84% 0.008 252);
+    --color-ink-3: oklch(64% 0.012 254);
+    --color-rule: oklch(31% 0.014 258);
+    --color-rule-strong: oklch(40% 0.014 258);
+    --color-accent: oklch(70% 0.17 256);
+    --color-accent-hover: oklch(78% 0.15 256);
+    --color-accent-wash: oklch(28% 0.06 256);
+    --color-graphite: oklch(13% 0.012 260);
+    --color-graphite-2: oklch(19% 0.014 260);
+    --color-graphite-ink: oklch(90% 0.008 250);
+    --color-ok: oklch(72% 0.15 155);
+    --color-ok-wash: oklch(26% 0.05 155);
+    --color-danger: oklch(68% 0.17 25);
+    --color-danger-wash: oklch(28% 0.06 25);
+  }
+}
+
+[data-theme="dark"] {
+  --color-paper: oklch(17% 0.014 260);
+  --color-paper-2: oklch(21% 0.015 260);
+  --color-paper-3: oklch(25% 0.016 260);
+  --color-ink: oklch(95% 0.006 250);
+  --color-ink-2: oklch(84% 0.008 252);
+  --color-ink-3: oklch(64% 0.012 254);
+  --color-rule: oklch(31% 0.014 258);
+  --color-rule-strong: oklch(40% 0.014 258);
+  --color-accent: oklch(70% 0.17 256);
+  --color-accent-hover: oklch(78% 0.15 256);
+  --color-accent-wash: oklch(28% 0.06 256);
+  --color-graphite: oklch(13% 0.012 260);
+  --color-graphite-2: oklch(19% 0.014 260);
+  --color-graphite-ink: oklch(90% 0.008 250);
+  --color-ok: oklch(72% 0.15 155);
+  --color-ok-wash: oklch(26% 0.05 155);
+  --color-danger: oklch(68% 0.17 25);
+  --color-danger-wash: oklch(28% 0.06 25);
+}

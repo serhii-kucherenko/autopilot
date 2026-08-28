@@ -58,3 +58,28 @@ and on a retention window.
 ## Supported versions
 
 Pre-1.0 and design-stage. Only the latest state of `main` is maintained.
+
+## The console has no user authentication
+
+Read this before putting the console anywhere but a private network.
+
+`apps/console` has no accounts, no login and no sessions. What it has is two shared secrets,
+both fail-closed - a route with its secret unset refuses every request rather than defaulting
+to open:
+
+| Secret | Guards | Who carries it |
+|---|---|---|
+| `AUTOPILOT_INTAKE_TOKEN` | uploading and reading bundles | dev and staging builds of the product. **Never a release build** |
+| `AUTOPILOT_CONSOLE_TOKEN` | the production press, feedback, and the crops | the console's own pages, which serve it to the browser |
+
+`AUTOPILOT_CONSOLE_TOKEN` is a gate, not authentication: anyone who can load a console page
+gets it. What it does stop is a blind POST from another site or a script that never loaded the
+console - and before it existed, an unauthenticated POST to `/api/press` recorded a production
+approval that `autopilot release` would honour.
+
+The two are deliberately different secrets. A device build carries the intake token, so if the
+press accepted that one, any dev build of the product could approve a production release.
+
+**Run the console on a private network or behind an authenticating reverse proxy.** The store
+holds screenshots of a running product; `docs/intake.md` says treat it as sensitive, and that
+is why the crops are gated and their responses are marked `private`.

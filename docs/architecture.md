@@ -30,6 +30,19 @@ flowchart TB
     R --> S1
 ```
 
+## Where the six layers live
+
+| Layer | Code |
+|---|---|
+| 1 · State backbone | `src/tracker.ts` (the queue), `src/store.ts` (intake, approvals, runs), the repo itself |
+| 2 · Ingestion | `src/triage.ts`, `src/selfaudit.ts`, `apps/console/app/api/bundles/` |
+| 3 · The Engineer | `src/engineer.ts` |
+| 4 · Continuity engine | `src/loop.ts` |
+| 5 · Review loop | `src/digest.ts`, `apps/console/app/digest/`, `src/release.ts` |
+| 6 · Guardrails | `src/boundaries.ts`, `src/gate.ts`, `src/anchor.ts`, and the fact that no runner reads `environments.production` |
+
+Everything under `packages/core/src/`. `autopilot doctor` checks the prerequisites for all of it.
+
 ## 1. State backbone
 
 The memory that survives every agent run. Without it, each cycle starts blind and the
@@ -80,4 +93,11 @@ What makes maximum autonomy safe:
 - the human holds the only production key.
 
 To go fully autonomous later, the missing pieces are canary release and automatic
-rollback. Not before.
+rollback. Not before - and `src/config.ts` refuses a config that sets
+`environments.production.requiresHumanApproval` to false until they exist, so the claim cannot
+be turned off by editing a file.
+
+The production claim is a test rather than a promise: the engineer runner never reads
+`environments.production`, and `packages/core/test/engineer.test.ts` proves it by giving the
+test config a production deploy that would leave a sentinel file behind. No test in the suite
+ever finds one.

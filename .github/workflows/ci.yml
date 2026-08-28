@@ -38,6 +38,42 @@ jobs:
       - name: Check the schema is itself valid
         run: check-jsonschema --check-metaschema schema/autopilot.config.schema.json
 
+  build:
+    name: Lint, typecheck, test, and the anchor check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      # The console is the first product that has to keep the anchor this repo tells
+      # every other product to keep. A raw colour or an off-scale spacing value fails here.
+      - name: Check the code against DESIGN.md
+        run: pnpm check-anchor
+
+      # The demo is the MVP gate: a full cycle, offline, with no credential. If it stops
+      # running, the claim that a contributor can clone this and see it work is dead.
+      - name: Run the offline demo end to end
+        run: pnpm demo
+
+      - name: Build the console
+        run: pnpm --filter @autopilot/console build
+
   links:
     name: Check relative links resolve
     runs-on: ubuntu-latest

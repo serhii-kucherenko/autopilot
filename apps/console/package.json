@@ -1,0 +1,27 @@
+{
+  "name": "@autopilot/console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 4317",
+    "build": "next build",
+    "start": "next start --port 4317",
+    "typecheck": "tsc -p tsconfig.json",
+    "seed": "node --experimental-strip-types scripts/seed.ts",
+    "demo": "node --experimental-strip-types scripts/demo.ts",
+    "test": "node --experimental-strip-types --test 'test/*.test.ts'"
+  },
+  "dependencies": {
+    "@autopilot/core": "workspace:*",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3"
+  }
+}
