@@ -7,6 +7,10 @@
   "required": ["product", "tracker", "repo", "environments", "gate"],
   "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer back to this schema, so editors validate the file as you type."
+    },
     "product": {
       "type": "object",
       "required": ["name", "vision"],

@@ -1,0 +1,30 @@
+name: A prompt produced the wrong behaviour
+description: A role prompt led an agent somewhere it should not go.
+labels: ["prompts"]
+body:
+  - type: dropdown
+    id: which
+    attributes:
+      label: Which prompt?
+      options: [triage, engineer, digest, self-audit]
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What did the agent do?
+    validations:
+      required: true
+  - type: textarea
+    id: rule
+    attributes:
+      label: Which line of the prompt led there, if you can tell?
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What rule would prevent it?
+      description: A rule should name the failure it prevents. "Be careful" is not a rule.
+  - type: input
+    id: model
+    attributes:
+      label: Which model and harness were you running?

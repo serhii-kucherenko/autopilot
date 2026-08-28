@@ -1,0 +1,9 @@
+# Default reviewer for everything.
+*               @serhii-kucherenko
+
+# The prompts are the product. Changes here change how every autonomous
+# cycle behaves, so they get the same scrutiny as code.
+/prompts/       @serhii-kucherenko
+
+# The config schema is a public contract with every product using Autopilot.
+/schema/        @serhii-kucherenko

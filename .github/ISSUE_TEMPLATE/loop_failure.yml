@@ -1,0 +1,42 @@
+name: The loop did something it should not have
+description: An autonomous cycle went wrong. The most useful report for this project.
+labels: ["loop", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The whole design rests on the loop staying inside its boundaries. Reports
+        of it stepping outside them are worth more than any feature request.
+  - type: textarea
+    id: what-it-did
+    attributes:
+      label: What did the loop do?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should it have done instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Which stage?
+      options: [capture, triage, execute, review, release, self-audit, unsure]
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Your autopilot.config.json
+      description: Redact paths and names. The boundaries section matters most.
+      render: json
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundary check
+      options:
+        - label: "`environments.production.requiresHumanApproval` was true"
+        - label: The change stayed inside the paths you expected
+        - label: The quality gate ran and passed before the merge

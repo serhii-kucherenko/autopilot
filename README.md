@@ -11,7 +11,7 @@ integrations that hold state, and the per-product config that makes it repeatabl
 
 ## Related: Loupe
 
-**[Loupe](../loupe/repo) captures. Autopilot decides what to do about it.**
+**[Loupe](https://github.com/serhii-kucherenko/loupe) captures. Autopilot decides what to do about it.**
 
 You point at an element in your running app and leave a comment; Loupe hands over a bundle
 with the element, its picture, and the API calls behind it. Everything after that is here.
@@ -21,11 +21,10 @@ configure, so either half can be adopted without the other.
 
 | | What it is | Where |
 |---|---|---|
-| **Loupe** | the annotation SDK, in your app | `../loupe/repo` · [Linear](https://linear.app/serhii-kucherenko/project/loupe-8fd34fb80084) |
+| **Loupe** | the annotation SDK, in your app | https://github.com/serhii-kucherenko/loupe · [Linear](https://linear.app/serhii-kucherenko/project/loupe-8fd34fb80084) |
 | **Autopilot** | the loop the bundles feed | this repo · [Linear](https://linear.app/serhii-kucherenko/project/autopilot-0e1846433181) |
 
-Both came out of [SER-601](https://linear.app/serhii-kucherenko/issue/SER-601). Neither is
-published to GitHub yet.
+Both came out of [SER-601](https://linear.app/serhii-kucherenko/issue/SER-601).
 
 ## The loop
 

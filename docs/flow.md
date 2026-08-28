@@ -44,7 +44,7 @@ Three funnels, one destination.
 | Funnel | Who | Where it works |
 |---|---|---|
 | Conversational (voice or text) | human | any product, day one, no instrumentation |
-| In-product annotation ([Loupe](../../loupe/repo)) | human | products worth the SDK, richest signal |
+| In-product annotation ([Loupe](https://github.com/serhii-kucherenko/loupe)) | human | products worth the SDK, richest signal |
 | Self-audit | AI | any product with a repo and tests |
 
 Conversation is the default because it costs nothing per product. Annotation is an

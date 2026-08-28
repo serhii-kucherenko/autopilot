@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    name: Validate config schema and examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validator
+        run: pip install check-jsonschema
+
+      # The schema is a public contract with every product using Autopilot.
+      # An example that stops validating means the contract changed silently.
+      - name: Validate examples against the schema
+        run: |
+          check-jsonschema \
+            --schemafile schema/autopilot.config.schema.json \
+            schema/example.*.json
+
+      - name: Check the schema is itself valid
+        run: check-jsonschema --check-metaschema schema/autopilot.config.schema.json
+
+  links:
+    name: Check relative links resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # This repo is mostly prose, so a dead internal link is its version of a
+      # broken build. External URLs are not checked: they fail for reasons that
+      # have nothing to do with this change.
+      - name: Find broken relative links
+        run: |
+          fail=0
+          while IFS= read -r file; do
+            while IFS= read -r target; do
+              [ -z "$target" ] && continue
+              resolved="$(dirname "$file")/${target%%#*}"
+              if [ ! -e "$resolved" ]; then
+                echo "::error file=$file::broken relative link -> $target"
+                fail=1
+              fi
+            done < <(grep -oE '\]\([^)#][^)]*\)' "$file" \
+                     | sed -E 's/^\]\(//; s/\)$//' \
+                     | grep -vE '^(https?:|mailto:)')
+          done < <(find . -name '*.md' -not -path './.git/*')
+          exit $fail
