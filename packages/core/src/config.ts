@@ -7,6 +7,7 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
+import { schemaPath } from "./paths.ts";
 // Named import, not default: ajv is CommonJS and its `.d.ts` describes a namespace
 // that TypeScript will not let you construct. The class is a real named export at runtime.
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -14,11 +15,6 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 export class ConfigError extends Error {
   override name = "ConfigError";
 }
-
-// ponytail: the schema is read from the repo layout rather than copied into this package,
-// so there is exactly one copy of the contract. Vendoring it if core is ever published
-// standalone is the upgrade path.
-const SCHEMA_URL = new URL("../../../schema/autopilot.config.schema.json", import.meta.url);
 
 export interface Config {
   product: { name: string; vision: string; anchors: string[] };
@@ -58,7 +54,9 @@ type Validator = ((data: unknown) => boolean) & { errors?: unknown };
 let validator: Validator | undefined;
 
 function compileValidator(): Validator {
-  const schema = JSON.parse(readFileSync(SCHEMA_URL, "utf8"));
+  // One copy of the contract, read from the checkout. See src/paths.ts for why not
+  // `import.meta`.
+  const schema = JSON.parse(readFileSync(schemaPath(), "utf8"));
   // strict off: the schema is the published contract, and ajv's strict mode objects to
   // `default` on properties, which is exactly how the contract documents its defaults.
   return new Ajv2020({ allErrors: true, useDefaults: false, strict: false }).compile(schema);

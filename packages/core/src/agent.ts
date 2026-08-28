@@ -9,6 +9,7 @@
 
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { promptPath } from "./paths.ts";
 
 export class PromptError extends Error {
   override name = "PromptError";
@@ -16,13 +17,9 @@ export class PromptError extends Error {
 
 export type PromptName = "triage" | "engineer" | "digest" | "self-audit";
 
-// ponytail: same layout assumption as config.ts - the prompts are the product, so they
-// live once at the repo root rather than being copied into this package.
-const PROMPTS_DIR = new URL("../../../prompts/", import.meta.url);
-
 export function loadPrompt(name: PromptName): string {
   try {
-    return readFileSync(new URL(`${name}.md`, PROMPTS_DIR), "utf8");
+    return readFileSync(promptPath(name), "utf8");
   } catch {
     throw new PromptError(`no prompt named ${name} in prompts/`);
   }

@@ -3,6 +3,7 @@
  * through these; the CLI drives the runners through them too.
  */
 
+export * from "./paths.ts";
 export * from "./bundle.ts";
 export * from "./config.ts";
 export * from "./tracker.ts";

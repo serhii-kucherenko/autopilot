@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, parseConfig, ConfigError } from "../src/config.ts";
+import { repoRoot, forgetRepoRoot, LayoutError } from "../src/paths.ts";
 
 function minimal(overrides: Record<string, unknown> = {}) {
   return {
@@ -72,4 +73,19 @@ test("the worked example in schema/ validates, or the docs are lying", () => {
   const c = parseConfig(raw);
   assert.equal(c.product.name, "Reco");
   assert.equal(c.capture.loupe.enabled, true);
+});
+
+test("the checkout is found by walking up, not from import.meta, so a bundler cannot break it", () => {
+  forgetRepoRoot();
+  const root = repoRoot(join(import.meta.dirname, "..", "src"));
+  assert.ok(readFileSync(join(root, "schema", "autopilot.config.schema.json"), "utf8").length > 100);
+
+  forgetRepoRoot();
+  process.env.AUTOPILOT_HOME = mkdtempSync(join(tmpdir(), "ap-nothome-"));
+  try {
+    assert.throws(() => repoRoot(), LayoutError);
+  } finally {
+    delete process.env.AUTOPILOT_HOME;
+    forgetRepoRoot();
+  }
 });

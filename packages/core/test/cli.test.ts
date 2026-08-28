@@ -115,7 +115,7 @@ test("check-anchor is clean on a repo that keeps to its own DESIGN.md", async ()
   const { root, configPath } = workspace();
   writeFileSync(join(root, "src", "ok.css"), ".x { color: #111318; padding: 16px; }\n");
   const { code, out } = await run(["check-anchor", "--config", configPath]);
-  assert.equal(code, EXIT.nothing, out);
+  assert.equal(code, EXIT.did, out);
   assert.match(out, /Anchor clean/);
 });
 
@@ -229,4 +229,14 @@ test("the starter config it writes is valid against the schema", () => {
   writeStarterConfig(path, "Reco", dir);
   const report = runDoctor({ configPath: path, fake: true });
   assert.equal(report.checks.find((c) => c.name === "autopilot.config.json")!.status, "ok");
+});
+
+test("check-anchor exits 0 when clean, because a checker passes or it does not", async () => {
+  const { root, configPath } = workspace();
+  writeFileSync(join(root, "src", "ok.css"), ".x { color: #111318; padding: 16px; }\n");
+  const clean = await run(["check-anchor", "--config", configPath]);
+  assert.equal(clean.code, EXIT.did, clean.out);
+
+  writeFileSync(join(root, "src", "bad.css"), ".x { color: #ff00aa; }\n");
+  assert.equal((await run(["check-anchor", "--config", configPath])).code, EXIT.failed);
 });

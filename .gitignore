@@ -6,3 +6,6 @@ dist/
 .env
 .env.local
 .autopilot/
+
+# Written by `pnpm demo`. A real product's config lives in that product's repo.
+apps/console/autopilot.config.json

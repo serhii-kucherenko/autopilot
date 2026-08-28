@@ -74,6 +74,7 @@ Options
 
 Exit codes
   0  did work        2  nothing to do        1  failed
+  check-anchor is the exception: 0 clean, 1 violations. A checker passes or it does not.
 `;
 
 interface Options {
@@ -178,8 +179,10 @@ async function main(argv: string[]): Promise<number> {
     const root = existsSync(configPathFrom(options)) ? loadConfig(configPathFrom(options)).repo.root : ".";
     const report = checkAnchor({ root: resolve(root) });
     process.stdout.write(`${formatAnchorReport(report)}\n`);
-    if (report.designMissing) return EXIT.failed;
-    return report.violations.length === 0 ? EXIT.nothing : EXIT.failed;
+    // A checker exits 0 when it passes. It is the one command that does not use `nothing`
+    // for an empty result, because "found no violations" is a pass, not a no-op - and CI,
+    // which is its main caller, reads any non-zero code as a failure.
+    return report.designMissing || report.violations.length > 0 ? EXIT.failed : EXIT.did;
   }
 
   const config = loadConfig(configPathFrom(options));

@@ -87,6 +87,39 @@ test("off-scale spacing is a violation, and the values every system uses literal
   );
 });
 
+test("a measure is not a spacing step, so max-width and font-size are left alone", () => {
+  const root = project({
+    "src/a.css": ".x { max-width: 34rem; font-size: 13px; padding: 16px; }\n",
+  });
+  assert.deepEqual(checkAnchor({ root }).violations, [], "only spacing properties are checked");
+});
+
+test("the spacing check reads a React inline style too", () => {
+  const root = project({
+    "src/a.tsx": 'const s = { marginTop: "13px", maxWidth: "34rem" };\n',
+  });
+  assert.deepEqual(
+    checkAnchor({ root }).violations.map((v) => v.value),
+    ["13px"],
+  );
+});
+
+test("a token definition is the declaration site, not a use, so it is not flagged", () => {
+  const root = project({ "src/a.css": ":root { --space-odd: 13px; }\n" });
+  assert.deepEqual(checkAnchor({ root }).violations, []);
+});
+
+test("a test file is never scanned, because its fixtures are wrong on purpose", () => {
+  const root = project({
+    "src/bad.test.ts": 'const c = "#ff00aa";\n',
+    "src/bad.spec.tsx": 'const c = "#ff00aa";\n',
+    "src/real.ts": 'const c = "#111318";\n',
+  });
+  const report = checkAnchor({ root });
+  assert.deepEqual(report.violations, []);
+  assert.equal(report.filesScanned, 1, "only the real file");
+});
+
 test("node_modules, dist and .next are never scanned", () => {
   const root = project({
     "node_modules/lib/a.css": ".x { color: #ff0000; }\n",
@@ -129,4 +162,51 @@ test("include narrows the scan to the directories that hold UI", () => {
   const report = checkAnchor({ root, include: ["src"] });
   assert.equal(report.violations.length, 1);
   assert.equal(report.violations[0]!.file, "src/a.css");
+});
+
+test("a raw oklch() is caught too, or an all-OKLCH palette would sail past the check", () => {
+  const root = project(
+    { "src/a.css": ".x { color: oklch(58% 0.2 256); background: oklch(98.5% 0.004 250); }\n" },
+    "# DESIGN\n\n`--accent` is oklch(58% 0.2 256).\n",
+  );
+  const report = checkAnchor({ root });
+  assert.deepEqual(
+    report.violations.map((v) => v.value),
+    ["oklch(98.5% 0.004 250)"],
+    "the declared one passes, the undeclared one does not",
+  );
+});
+
+test("whitespace inside oklch() does not smuggle a colour past the check", () => {
+  const root = project(
+    { "src/a.css": ".x { color: oklch(  58%   0.2   256  ); }\n" },
+    "# DESIGN\n\n`--accent` is oklch(58% 0.2 256).\n",
+  );
+  assert.deepEqual(checkAnchor({ root }).violations, []);
+});
+
+test("a colour in a comment is not a use of a colour", () => {
+  const root = project({
+    "src/a.css": "/* was #ff00aa before the token existed */\n.x { color: #111318; }\n",
+    "src/b.ts": '// TODO: #ff00aa used to be here\nconst c = "#111318";\n',
+    "src/c.ts": "/* multi\n   line #ff00aa\n*/\nexport const ok = 1;\n",
+  });
+  assert.deepEqual(checkAnchor({ root }).violations, []);
+});
+
+test("stripping a comment keeps the line numbers honest", () => {
+  const root = project({
+    "src/a.css": "/* nothing\n   here\n*/\n.x { color: #ff00aa; }\n",
+  });
+  assert.equal(checkAnchor({ root }).violations[0]!.line, 4);
+});
+
+test("a https:// url is not mistaken for a comment", () => {
+  const root = project({
+    "src/a.css": '.x { background: url(https://cdn/x.png); color: #ff00aa; }\n',
+  });
+  assert.deepEqual(
+    checkAnchor({ root }).violations.map((v) => v.value),
+    ["#ff00aa"],
+  );
 });
