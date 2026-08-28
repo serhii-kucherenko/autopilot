@@ -337,3 +337,59 @@ test("doctor names each anchor file the product does not have, because the promp
   const full = runDoctor({ configPath, fake: true }).checks.find((c) => c.name === "anchor")!;
   assert.equal(full.status, "ok");
 });
+
+/*
+ * `wake` - the one command a scheduler calls.
+ *
+ * `integrations/README.md` has had a Scheduler box in its diagram since the first commit and
+ * the folder has only ever held a README. Nothing shipped wakes the loop, which makes
+ * "keeps working between your touches" the one claim in the README that no code backs.
+ *
+ * A scheduler wants one command, one exit code and no shell glue. `loop` then `digest` is two
+ * of each, so every person wiring this up would write the same wrapper script and get the
+ * exit code wrong in the same way.
+ */
+
+function seedTicket(storePath: string): void {
+  mkdirSync(storePath, { recursive: true });
+  writeFileSync(
+    join(storePath, "tickets.json"),
+    JSON.stringify({
+      nextNumber: 2,
+      tickets: [
+        {
+          id: "AP-1",
+          title: "The library grid loses its scroll position",
+          description: "Done when: returning from a reader restores the row.",
+          lane: "ai",
+          priority: 2,
+          state: "Backlog",
+          stateType: "backlog",
+          labels: ["lane:ai"],
+          blockedBy: [],
+        },
+      ],
+      comments: {},
+    }),
+  );
+}
+
+test("wake is one command a cron line can call, and it reports nothing-to-do on an empty backlog", async () => {
+  const { configPath, storePath } = workspace();
+  const { code, out } = await run(["wake", "--config", configPath, "--store", storePath, "--fake", "--plain"]);
+  assert.equal(code, EXIT.nothing, `an idle wake is not a failure. Output:\n${out}`);
+  assert.match(out, /idle|nothing|empty/i, "it must say why it did nothing");
+});
+
+test("wake runs the cycle and the digest in one process, so a scheduler needs no wrapper script", async () => {
+  const { configPath, storePath } = workspace();
+  seedTicket(storePath);
+  const { out } = await run(["wake", "--config", configPath, "--store", storePath, "--fake", "--plain", "--dry-run"]);
+  assert.match(out, /AP-1/, "the cycle ran");
+  assert.match(out, /digest|Nothing landed/i, "and the digest ran in the same command");
+});
+
+test("wake is documented, because an undocumented entry point is one nobody wires up", async () => {
+  const { out } = await run(["help"]);
+  assert.match(out, /\bwake\b/);
+});
