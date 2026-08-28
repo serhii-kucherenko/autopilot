@@ -17,3 +17,4 @@ wrong gets a new ADR that supersedes it, and the old one stays with a `Supersede
 | [0006](0006-no-plans-directory.md) | The ordered work lives in Linear; ADRs hold the why |
 | [0007](0007-structured-output-contract.md) | The prompts stay prose; the machine contract is appended by the runner |
 | [0008](0008-runner-owns-the-gate.md) | The agent writes the code; the runner owns the gate, the merge and the deploy |
+| [0009](0009-build-order-and-shape.md) | The thirteen picks that shaped the runnable loop |
