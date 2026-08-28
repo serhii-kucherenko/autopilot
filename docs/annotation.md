@@ -1,7 +1,7 @@
 # Annotation
 
 How a point and a sentence become correct context. The implementation is
-[Loupe](https://github.com/serhii-kucherenko/loupe); this document is the model behind it.
+[Loupe](../../loupe/repo); this document is the model behind it.
 
 ## The model
 

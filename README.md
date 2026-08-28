@@ -9,9 +9,23 @@ production button.
 This repo is the whole system: the flow, the diagrams, the prompts each role runs, the
 integrations that hold state, and the per-product config that makes it repeatable.
 
-The capture side lives in a separate project, [Loupe](https://github.com/serhii-kucherenko/loupe):
-you point at an element in your running app and leave a comment, and it hands over the
-element, its picture, and the API calls behind it.
+## Related: Loupe
+
+**[Loupe](../loupe/repo) captures. Autopilot decides what to do about it.**
+
+You point at an element in your running app and leave a comment; Loupe hands over a bundle
+with the element, its picture, and the API calls behind it. Everything after that is here.
+
+The seam is the bundle format, kept deliberately clean: Loupe only ever POSTs to a URL you
+configure, so either half can be adopted without the other.
+
+| | What it is | Where |
+|---|---|---|
+| **Loupe** | the annotation SDK, in your app | `../loupe/repo` · [Linear](https://linear.app/serhii-kucherenko/project/loupe-8fd34fb80084) |
+| **Autopilot** | the loop the bundles feed | this repo · [Linear](https://linear.app/serhii-kucherenko/project/autopilot-0e1846433181) |
+
+Both came out of [SER-601](https://linear.app/serhii-kucherenko/issue/SER-601). Neither is
+published to GitHub yet.
 
 ## The loop
 
