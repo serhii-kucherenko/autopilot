@@ -132,28 +132,41 @@ export class ClaudeCodeAgent implements AgentRunner {
 }
 
 /**
+ * One scripted turn. `effect` is what makes the fake honest: a real agent changes files,
+ * so a fake that only returns text would let the runner pass a test it would fail against
+ * a real diff. The demo's fake writes actual code with it.
+ */
+export type FakeStep =
+  | string
+  | { text: string; ok?: boolean; effect?: (cwd: string) => void | Promise<void> };
+
+/**
  * Scripted agent. This is what makes the whole loop runnable offline with no credential
  * and no model call - the same reason `FileTracker` exists (ADR 0005).
  */
 export class FakeAgent implements AgentRunner {
   readonly requests: AgentRequest[] = [];
-  private readonly script: string[];
+  private readonly script: FakeStep[];
   private index = 0;
 
-  constructor(script: string[] = []) {
+  constructor(script: FakeStep[] = []) {
     this.script = script;
   }
 
-  run(request: AgentRequest): Promise<AgentResult> {
+  async run(request: AgentRequest): Promise<AgentResult> {
     this.requests.push(request);
-    const reply = this.script[this.index++];
-    if (reply === undefined) {
-      return Promise.resolve({
+    const step = this.script[this.index++];
+    if (step === undefined) {
+      return {
         ok: false,
         text: `FakeAgent script exhausted after ${this.index - 1} replies`,
         exitCode: 1,
-      });
+      };
     }
-    return Promise.resolve({ ok: true, text: reply, exitCode: 0 });
+    if (typeof step === "string") return { ok: true, text: step, exitCode: 0 };
+
+    await step.effect?.(request.cwd);
+    const ok = step.ok ?? true;
+    return { ok, text: step.text, exitCode: ok ? 0 : 1 };
   }
 }
