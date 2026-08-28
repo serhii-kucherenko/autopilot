@@ -22,3 +22,4 @@ wrong gets a new ADR that supersedes it, and the old one stays with a `Supersede
 | [0008](0008-runner-owns-the-gate.md) | The agent writes the code; the runner owns the gate, the merge and the deploy |
 | [0009](0009-build-order-and-shape.md) | The thirteen picks that shaped the runnable loop |
 | [0010](0010-the-glossary-is-part-of-the-anchor.md) | The glossary is part of the anchor |
+| [0011](0011-the-loop-cannot-quiet-its-own-checks.md) | The loop cannot quiet its own checks |

@@ -72,6 +72,18 @@ errored, the diff went out of bounds, the deploy failed. The ticket stays in fli
 run resumes the same branch. **Failed is not parked.** They are different words on purpose.
 _Avoid_: broken, errored, blocked
 
+### Self-hosting
+
+**Self-hosting**:
+Running the loop against Autopilot itself. The honest first test, because it needs nobody's
+permission - and the case where the agent's reach includes the code that judges it.
+_Avoid_: dogfooding, bootstrapping, eating our own
+
+**Enforcement code**:
+The five things the loop may not edit when it builds itself: the boundary check, the gate, the
+engineer runner, the release path and the prompts. A check the loop can turn down is not a check.
+_Avoid_: core, internals, the framework
+
 ### The anchor
 
 **Anchor**:
