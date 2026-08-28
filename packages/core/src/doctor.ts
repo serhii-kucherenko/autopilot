@@ -86,9 +86,60 @@ function gitCheck(): Check {
   };
 }
 
-function linearCheck(fake: boolean): Check {
-  if (process.env.LINEAR_API_KEY) {
-    return { name: "LINEAR_API_KEY", status: "ok", detail: "set" };
+export interface TrackerProbe {
+  ok: boolean;
+  detail: string;
+}
+
+/**
+ * Ask the tracker whether the key actually works.
+ *
+ * Injected rather than called directly so the suite stays offline - a property the README
+ * states and that is worth more than the convenience of a real call in a test.
+ */
+export type ProbeTracker = (apiKey: string, project: string, team?: string) => Promise<TrackerProbe>;
+
+/*
+ * A key that exists is not a key that works.
+ *
+ * The first version reported `set` and stopped there. A key was added to `.env`, doctor said
+ * `set`, and proving it reached Linear needed a hand-written probe - so a typo'd or revoked key
+ * passed and would have failed on a schedule at 3am with nobody watching. That is exactly the
+ * situation doctor exists to prevent.
+ *
+ * Three outcomes, not two: working, rejected, and could-not-be-checked. Unreachable is a warn,
+ * because a person on a plane has a fine setup and a bad connection.
+ */
+async function linearCheck(
+  fake: boolean,
+  apiKey: string | undefined,
+  probe: ProbeTracker | undefined,
+  project: string | undefined,
+  team: string | undefined,
+): Promise<Check> {
+  if (apiKey) {
+    if (!probe || !project) return { name: "LINEAR_API_KEY", status: "ok", detail: "set" };
+    try {
+      const result = await probe(apiKey, project, team);
+      if (result.ok) return { name: "LINEAR_API_KEY", status: "ok", detail: result.detail };
+      return {
+        name: "LINEAR_API_KEY",
+        status: "missing",
+        detail: result.detail,
+        fix:
+          "The variable is set but the tracker refused it. Most often the key was revoked, or " +
+          "copied with a character missing - Linear shows it once, so a re-copy is not possible " +
+          "and a new key is quicker than checking. If the key is right, the project name in the " +
+          "config may not match a project you can see.",
+      };
+    } catch (cause) {
+      return {
+        name: "LINEAR_API_KEY",
+        status: "warn",
+        detail: `set, but could not be checked: ${(cause as Error).message}`,
+        fix: "Probably no network. The key itself may be fine; run doctor again when connected.",
+      };
+    }
   }
   if (fake) {
     return {
@@ -200,13 +251,35 @@ function anchorCheck(configPath: string | undefined): Check | undefined {
   };
 }
 
-export function runDoctor(options: { configPath?: string; fake?: boolean } = {}): DoctorReport {
+export interface DoctorOptions {
+  configPath?: string;
+  fake?: boolean;
+  /** Defaults to the environment. Present so a test can state the key it is testing. */
+  apiKey?: string;
+  /** Omitted means existence-only, which is what an offline caller wants. */
+  probeTracker?: ProbeTracker;
+}
+
+export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
+  const apiKey = options.apiKey ?? process.env.LINEAR_API_KEY;
+  let project: string | undefined;
+  let team: string | undefined;
+  if (options.configPath && existsSync(options.configPath)) {
+    try {
+      const cfg = loadConfig(options.configPath);
+      project = cfg.tracker.project;
+      team = cfg.tracker.team;
+    } catch {
+      // configCheck reports why. A bad config just means no probe.
+    }
+  }
+
   const checks: Check[] = [
     nodeCheck(),
     gitCheck(),
     pnpmCheck(),
     claudeCheck(),
-    linearCheck(options.fake ?? false),
+    await linearCheck(options.fake ?? false, apiKey, options.probeTracker, project, team),
     configCheck(options.configPath),
     ...[anchorCheck(options.configPath)].filter((c): c is Check => c !== undefined),
   ];

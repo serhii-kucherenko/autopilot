@@ -13,9 +13,10 @@
 import { parseArgs } from "node:util";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { repoRoot } from "./paths.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { ClaudeCodeAgent, FakeAgent, type AgentRunner } from "./agent.ts";
-import { FileTracker, LinearTracker, type Tracker } from "./tracker.ts";
+import { FileTracker, LinearTracker, trackerFor, type Tracker } from "./tracker.ts";
 import { Store, defaultStoreRoot } from "./store.ts";
 import { readBundleDir, listBundleDirs, parseBundleJSON, type Bundle } from "./bundle.ts";
 import { runTriage } from "./triage.ts";
@@ -25,7 +26,7 @@ import { runDigest, plainDigest, coherenceOf } from "./digest.ts";
 import { runRelease } from "./release.ts";
 import { runLoop } from "./loop.ts";
 import { checkAnchor, formatAnchorReport } from "./anchor.ts";
-import { runDoctor, formatDoctorReport } from "./doctor.ts";
+import { runDoctor, formatDoctorReport, type TrackerProbe } from "./doctor.ts";
 
 export const EXIT = { did: 0, failed: 1, nothing: 2 } as const;
 
@@ -171,9 +172,12 @@ async function main(argv: string[]): Promise<number> {
 
   if (command === "doctor") {
     const path = existsSync(configPathFrom(options)) || options.config ? configPathFrom(options) : undefined;
-    const report = runDoctor({
+    const report = await runDoctor({
       ...(path ? { configPath: path } : {}),
       ...(options.fake ? { fake: true } : {}),
+      // The real probe. `doctor` is the one command whose whole job is finding out, so it is
+      // the one place a network call earns its keep.
+      ...(options.fake ? {} : { probeTracker: probeLinear }),
     });
     process.stdout.write(`${formatDoctorReport(report)}\n`);
     return report.ready ? EXIT.did : EXIT.failed;
@@ -483,8 +487,58 @@ async function main(argv: string[]): Promise<number> {
 }
 
 /** Exported so tests can drive the CLI without spawning a process. */
+/*
+ * Read `.env` from the Autopilot checkout before anything looks at `process.env`.
+ *
+ * A key was put in `repo/.env` - the obvious place, and already gitignored - and `doctor` still
+ * reported it missing, because nothing loaded the file. Telling a person their correct instinct
+ * was wrong is worse than reading the file.
+ *
+ * Three deliberate choices:
+ * - `process.loadEnvFile` rather than a dependency. It is stdlib, and a real environment
+ *   variable already wins over the file, so a plist entry or an export overrides a stale
+ *   `.env` rather than the other way round.
+ * - the Autopilot checkout only, never the current directory. The loop runs inside other
+ *   people's repos and the gate passes `process.env` to every command it shells out to, so
+ *   hoovering up a product's own `.env` would hand its secrets to the agent.
+ * - a missing file is silence. Not having one is the normal case.
+ */
+/**
+ * Read-only, and the cheapest question that proves the key works.
+ *
+ * A server that answered and refused is a different finding from a network that never
+ * answered: the first means the key or the project name is wrong and doctor should say so;
+ * the second means try again on a better connection. Only the transport failure is rethrown,
+ * and doctor turns that into a warning rather than a block.
+ */
+async function probeLinear(apiKey: string, project: string, team?: string): Promise<TrackerProbe> {
+  const tracker = trackerFor({ project, ...(team ? { team } : {}), apiKey });
+  try {
+    const open = await tracker.listOpen();
+    return {
+      ok: true,
+      detail: `reached the tracker, ${open.length} open ticket${open.length === 1 ? "" : "s"} in ${project}`,
+    };
+  } catch (cause) {
+    const message = (cause as Error).message;
+    const answered = message.startsWith("Linear returned") || message.startsWith("Linear rejected");
+    if (!answered) throw cause;
+    return { ok: false, detail: `set, but the tracker rejected it: ${message}` };
+  }
+}
+
+function loadCheckoutEnv(): void {
+  try {
+    process.loadEnvFile(join(repoRoot(), ".env"));
+  } catch {
+    // No .env, or an unreadable one. Neither is worth a word: `doctor` is what reports a
+    // missing key, and it names the fix.
+  }
+}
+
 export async function cli(argv: string[]): Promise<number> {
   try {
+    loadCheckoutEnv();
     return await main(argv);
   } catch (cause) {
     process.stderr.write(`${(cause as Error).message}\n`);

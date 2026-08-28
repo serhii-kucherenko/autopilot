@@ -116,6 +116,12 @@ pnpm autopilot loop   --config path/to/autopilot.config.json   # one cycle. --dr
 agent would receive and spends no model call, which is how you decide whether to trust the loop
 with a product before it touches one. `--fake` runs any of them fully offline.
 
+`LINEAR_API_KEY` can live in a `.env` at the root of this checkout, which is gitignored. A real
+exported variable wins over that file, so a `launchd` entry or a shell export overrides a stale
+one. `autopilot doctor` makes a read-only call to prove the key works rather than only that it
+exists - a revoked or mistyped key is reported as a miss, and an unreachable network as a
+warning.
+
 Two environment variables, both fail-closed: `AUTOPILOT_INTAKE_TOKEN` for uploading bundles and
 `AUTOPILOT_CONSOLE_TOKEN` for the console's own writes. The console has **no user
 authentication** - keep it on a private network or behind an authenticating proxy, and read
