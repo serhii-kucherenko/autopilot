@@ -241,3 +241,97 @@ test("check-anchor exits 0 when clean, because a checker passes or it does not",
   writeFileSync(join(root, "src", "bad.css"), ".x { color: #ff00aa; }\n");
   assert.equal((await run(["check-anchor", "--config", configPath])).code, EXIT.failed);
 });
+
+/*
+ * The three defects a rehearsal against a real product found.
+ *
+ * SER-625's runbook told a reader to rehearse with `loop --dry-run` before deciding whether
+ * to let a coding agent touch a product they use daily. Running exactly that against Reco
+ * printed one line and no prompt, exited 1 as though it had failed, and said nothing about
+ * the two anchor files Reco does not have - while the prompt it built told the agent to go
+ * read them. All three are the same failure: the rehearsal answered none of the questions a
+ * person rehearses to answer.
+ */
+
+test("engineer --dry-run reports nothing-to-do, because a rehearsal that worked is not a failure", async () => {
+  const { root, configPath, storePath } = workspace();
+  const tickets = join(storePath, "tickets.json");
+  mkdirSync(storePath, { recursive: true });
+  writeFileSync(
+    tickets,
+    JSON.stringify({
+      nextNumber: 2,
+      tickets: [
+        {
+          id: "AP-1",
+          title: "The library grid loses its scroll position",
+          description: "Done when: returning from a reader restores the row.",
+          lane: "ai",
+          priority: 2,
+          state: "Backlog",
+          stateType: "backlog",
+          labels: ["lane:ai"],
+          blockedBy: [],
+        },
+      ],
+      comments: {},
+    }),
+  );
+
+  const { code, out } = await run([
+    "engineer", "AP-1", "--config", configPath, "--store", storePath, "--dry-run", "--fake",
+  ]);
+  assert.equal(code, EXIT.nothing, `a dry run must not exit failed. Output:\n${out}`);
+  assert.match(out, /Prompt: The Engineer/, "the rehearsal must show the prompt");
+  assert.ok(existsSync(root));
+});
+
+test("loop --dry-run prints the prompt, because that is the whole point of rehearsing", async () => {
+  const { configPath, storePath } = workspace();
+  mkdirSync(storePath, { recursive: true });
+  writeFileSync(
+    join(storePath, "tickets.json"),
+    JSON.stringify({
+      nextNumber: 2,
+      tickets: [
+        {
+          id: "AP-1",
+          title: "The library grid loses its scroll position",
+          description: "Done when: returning from a reader restores the row.",
+          lane: "ai",
+          priority: 2,
+          state: "Backlog",
+          stateType: "backlog",
+          labels: ["lane:ai"],
+          blockedBy: [],
+        },
+      ],
+      comments: {},
+    }),
+  );
+
+  const { code, out } = await run([
+    "loop", "--config", configPath, "--store", storePath, "--dry-run", "--fake",
+  ]);
+  assert.match(out, /Prompt: The Engineer/, "a dry run that shows no prompt informs no decision");
+  assert.match(out, /AP-1/, "and it must still say which ticket it rehearsed");
+  assert.equal(code, EXIT.nothing, `a rehearsal did not fail. Output:\n${out.slice(0, 400)}`);
+});
+
+test("doctor names each anchor file the product does not have, because the prompt sends the agent to read them", async () => {
+  const { root, configPath } = workspace();
+  // The workspace has DESIGN.md and neither docs/adr/ nor docs/vision.md - Reco exactly.
+  const report = runDoctor({ configPath, fake: true });
+  const anchor = report.checks.find((c) => c.name === "anchor")!;
+  assert.ok(anchor, "doctor must check the anchor at all");
+  assert.equal(anchor.status, "warn", "the loop still runs; it just has less to push against");
+  assert.match(anchor.detail, /docs\/adr\//);
+  assert.match(anchor.detail, /docs\/vision\.md/);
+  assert.doesNotMatch(anchor.detail, /DESIGN\.md/, "what exists is not a finding");
+
+  mkdirSync(join(root, "docs", "adr"), { recursive: true });
+  writeFileSync(join(root, "docs", "adr", "0001-x.md"), "# 0001\n");
+  writeFileSync(join(root, "docs", "vision.md"), "Reco is for reading.\n");
+  const full = runDoctor({ configPath, fake: true }).checks.find((c) => c.name === "anchor")!;
+  assert.equal(full.status, "ok");
+});

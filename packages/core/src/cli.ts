@@ -311,6 +311,10 @@ async function main(argv: string[]): Promise<number> {
           ...(dryRun ? { dryRun: true } : {}),
         });
         process.stdout.write(`${outcome.status}: ${outcome.summary}\n\n${outcome.detail}\n`);
+        // A rehearsal that did exactly what it was asked is not a failure. It shipped
+        // nothing, which is what `nothing to do` means, and a wrapper reading exit 1 would
+        // report a working dry run as broken.
+        if (dryRun) return EXIT.nothing;
         return outcome.status === "shipped" ? EXIT.did : EXIT.failed;
       }
 
@@ -327,7 +331,14 @@ async function main(argv: string[]): Promise<number> {
           store,
           maxCycles: cycles,
           ...(dryRun ? { dryRun: true } : {}),
-          onCycle: (cycle) => process.stdout.write(`${cycle.message}\n`),
+          onCycle: (cycle) => {
+            process.stdout.write(`${cycle.message}\n`);
+            // The reason to rehearse is to read the prompt before letting an agent loose on
+            // a product. Printing only the summary answered none of that.
+            if (dryRun && cycle.engineer?.detail) {
+              process.stdout.write(`\n${cycle.engineer.detail}\n`);
+            }
+          },
         });
         if (report.pruned > 0) {
           process.stdout.write(
