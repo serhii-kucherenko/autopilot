@@ -51,6 +51,7 @@ relitigate them.
 | `docs/flow.md` | The end-to-end flow, stage by stage, with diagrams |
 | `docs/architecture.md` | The six layers and what each one owns |
 | `docs/annotation.md` | How capture works per platform, and what a bundle contains |
+| `docs/intake.md` | How annotating from a phone or iPad reaches an agent that may be asleep |
 | `docs/coherence.md` | The hard problem: staying coherent across hundreds of autonomous cycles |
 | `prompts/` | The prompt each role runs: triage, engineer, reviewer, digest, self-audit |
 | `integrations/` | How Linear, git hosting, the scheduler and Loupe are wired |
