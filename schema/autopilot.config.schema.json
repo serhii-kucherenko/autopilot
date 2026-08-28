@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/serhii-kucherenko/autopilot/schema/autopilot.config.schema.json",
+  "title": "Autopilot product config",
+  "description": "One file per product. Everything the loop needs to know that is specific to this codebase. Nothing in the prompts is product-specific; this file is where the difference lives.",
+  "type": "object",
+  "required": ["product", "tracker", "repo", "environments", "gate"],
+  "additionalProperties": false,
+  "properties": {
+    "product": {
+      "type": "object",
+      "required": ["name", "vision"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "vision": {
+          "type": "string",
+          "description": "Path to the product vision doc, or the vision itself in one paragraph. Part of the coherence anchor: the engineer reads it before planning."
+        },
+        "anchors": {
+          "type": "array",
+          "description": "Extra files the engineer must read before planning. DESIGN.md and docs/adr are assumed.",
+          "items": { "type": "string" },
+          "default": ["DESIGN.md", "docs/adr/"]
+        }
+      }
+    },
+    "tracker": {
+      "type": "object",
+      "required": ["kind", "project"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["linear"] },
+        "project": { "type": "string", "description": "Linear project name or id" },
+        "team": { "type": "string" },
+        "laneLabels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ai": { "type": "string", "default": "lane:ai" },
+            "human": { "type": "string", "default": "lane:human" }
+          }
+        }
+      }
+    },
+    "repo": {
+      "type": "object",
+      "required": ["root", "defaultBranch"],
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "string" },
+        "defaultBranch": { "type": "string", "default": "main" },
+        "branchPrefix": { "type": "string", "default": "auto/" }
+      }
+    },
+    "environments": {
+      "type": "object",
+      "required": ["staging"],
+      "additionalProperties": false,
+      "properties": {
+        "staging": {
+          "type": "object",
+          "required": ["deploy"],
+          "additionalProperties": false,
+          "properties": {
+            "deploy": { "type": "string", "description": "Command or workflow that deploys to staging" },
+            "url": { "type": "string" }
+          }
+        },
+        "production": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "deploy": { "type": "string" },
+            "url": { "type": "string" },
+            "requiresHumanApproval": {
+              "type": "boolean",
+              "default": true,
+              "description": "Must stay true until canary release and automatic rollback exist. The loop refuses to deploy production itself."
+            }
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "description": "The quality gate. Every command must pass before the engineer may merge.",
+      "required": ["commands"],
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "featureFlags": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required": { "type": "boolean", "default": true },
+            "defaultState": { "type": "string", "enum": ["on", "off"], "default": "off" }
+          }
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "description": "Where annotations come from for this product.",
+      "additionalProperties": false,
+      "properties": {
+        "loupe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "bundleDir": { "type": "string", "description": "Where FileTransport writes, e.g. ~/.loupe/Reco" },
+            "endpoint": { "type": "string", "description": "Intake URL when using HTTPTransport" }
+          }
+        },
+        "conversational": { "type": "boolean", "default": true }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "description": "What the loop may never touch on this product.",
+      "additionalProperties": false,
+      "properties": {
+        "protectedPaths": { "type": "array", "items": { "type": "string" } },
+        "forbiddenCommands": { "type": "array", "items": { "type": "string" } },
+        "maxTicketsInFlight": { "type": "integer", "default": 1, "minimum": 1 }
+      }
+    },
+    "cadence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "engineerInterval": { "type": "string", "description": "How often the continuity engine wakes, e.g. 30m" },
+        "digest": { "type": "string", "description": "When the digest is sent, e.g. daily 08:00" },
+        "selfAuditOnEmptyBacklog": { "type": "boolean", "default": true }
+      }
+    }
+  }
+}

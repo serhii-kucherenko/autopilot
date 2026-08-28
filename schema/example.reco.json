@@ -1,0 +1,52 @@
+{
+  "$schema": "./autopilot.config.schema.json",
+  "product": {
+    "name": "Reco",
+    "vision": "docs/vision.md",
+    "anchors": ["DESIGN.md", "docs/adr/", "docs/vision.md"]
+  },
+  "tracker": {
+    "kind": "linear",
+    "project": "Reco",
+    "team": "Core Team",
+    "laneLabels": { "ai": "lane:ai", "human": "lane:human" }
+  },
+  "repo": {
+    "root": ".",
+    "defaultBranch": "main",
+    "branchPrefix": "auto/"
+  },
+  "environments": {
+    "staging": {
+      "deploy": "bash ios/package-ios.sh",
+      "url": "testflight://reco"
+    },
+    "production": {
+      "deploy": "bash ios/release.sh",
+      "requiresHumanApproval": true
+    }
+  },
+  "gate": {
+    "commands": [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm test",
+      "xcodebuild test -scheme Reco -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'"
+    ],
+    "featureFlags": { "required": true, "defaultState": "off" }
+  },
+  "capture": {
+    "loupe": { "enabled": true, "bundleDir": "~/.loupe/Reco" },
+    "conversational": true
+  },
+  "boundaries": {
+    "protectedPaths": ["ios/Secrets/", ".env*", "fastlane/match/"],
+    "forbiddenCommands": ["git push --force", "rm -rf"],
+    "maxTicketsInFlight": 1
+  },
+  "cadence": {
+    "engineerInterval": "30m",
+    "digest": "daily 08:00",
+    "selfAuditOnEmptyBacklog": true
+  }
+}
