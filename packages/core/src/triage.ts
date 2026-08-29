@@ -138,11 +138,39 @@ function describeBundles(bundles: Bundle[]): string {
     .join("\n\n");
 }
 
-function describeBacklog(open: Ticket[]): string {
+/** Enough of a description to see an overlap, not enough for one ticket to dominate. */
+const BACKLOG_SUMMARY_CHARS = 240;
+
+/**
+ * How many tickets triage is shown.
+ *
+ * `prompts/triage.md` asks it to merge duplicates, which it can only do for tickets it can
+ * see - so the cap is a real limit on the quality of the merge, and the number it leaves out
+ * is stated rather than hidden. Unbounded was the alternative, and a product with three
+ * hundred open tickets would have put all three hundred in one prompt.
+ */
+const BACKLOG_MAX = 60;
+
+export function describeBacklog(open: Ticket[]): string {
   if (open.length === 0) return "The backlog is empty.";
-  return open
-    .map((t) => `- ${t.id} [${t.lane}, p${t.priority}, ${t.state}] ${t.title}`)
-    .join("\n");
+
+  const shown = open.slice(0, BACKLOG_MAX);
+  const lines = shown.map((t) => {
+    const head = `- ${t.id} [${t.lane}, p${t.priority}, ${t.state}] ${t.title}`;
+    // Titles alone cannot show a duplicate: "search is stale" and "results do not refresh"
+    // are the same bug in different words, and the overlap lives in the description.
+    const body = (t.description ?? "").replace(/\s+/g, " ").trim();
+    if (!body) return head;
+    const clipped =
+      body.length > BACKLOG_SUMMARY_CHARS ? `${body.slice(0, BACKLOG_SUMMARY_CHARS)}...` : body;
+    return `${head}\n    ${clipped}`;
+  });
+
+  const left = open.length - shown.length;
+  if (left > 0) {
+    lines.push(`- ...and ${left} more open tickets, not listed. Prefer linking to an existing ticket over filing a near-duplicate you cannot see.`);
+  }
+  return lines.join("\n");
 }
 
 export interface TriageOptions {

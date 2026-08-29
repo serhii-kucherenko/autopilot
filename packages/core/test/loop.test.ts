@@ -430,11 +430,11 @@ test("a batch of nothing but failures is not a quiet day", async () => {
 
 test("the coherence numbers mean nothing without a DESIGN.md, and it says so", () => {
   assert.match(
-    describeCoherence({ conflicts: 0, anchorViolations: 0, anchorExists: false, signals: [] }),
+    describeCoherence({ conflicts: 0, anchorViolations: 0, anchorExists: false, signals: [], tally: { shipped: 0, failed: 0, attempts: 0, byKind: {} } }),
     /no anchor and nothing to measure/,
   );
   assert.match(
-    describeCoherence({ conflicts: 1, anchorViolations: 2, anchorExists: true, signals: [] }),
+    describeCoherence({ conflicts: 1, anchorViolations: 2, anchorExists: true, signals: [], tally: { shipped: 0, failed: 0, attempts: 0, byKind: {} } }),
     /stopped on an anchor conflict: 1.*never declared: 2/s,
   );
 });
@@ -446,6 +446,7 @@ test("a conflict is named in the plain digest, not only counted", () => {
     anchorViolations: 0,
     anchorExists: true,
     signals: [{ kind: "conflict", ticketId: "AP-2", detail: "the vision refuses a feed", at: "2026-08-28T00:00:00Z" }],
+    tally: { shipped: 4, failed: 1, attempts: 5, byKind: { conflict: 1 } },
   });
   assert.match(text, /AP-2 \[conflict\] the vision refuses a feed/);
   assert.match(text, /stopped on an anchor conflict: 1/);

@@ -50,6 +50,20 @@ export interface Signal {
   at?: string;
 }
 
+/**
+ * The score. `attempts` is the denominator that makes every other number readable.
+ *
+ * One ticket can appear in both halves across its life - a gate failure today, a ship
+ * tomorrow - so this counts *attempts*, not tickets. That is the honest reading: a ticket
+ * that needed three tries cost three attempts.
+ */
+export interface Tally {
+  shipped: number;
+  failed: number;
+  attempts: number;
+  byKind: Partial<Record<SignalKind, number>>;
+}
+
 export interface StagedRun {
   ticketId: string;
   commitSHA: string;
@@ -305,6 +319,33 @@ export class Store {
   }
 
   /** Everything the loop hit since the last digest. */
+  /**
+   * How many attempts shipped, and how many did not.
+   *
+   * Signals record only the outcomes that were not a clean ship and `runs` records the ships.
+   * Both existed and nothing put them together, so a digest could say "3 conflicts" while a
+   * person had no way to tell whether that was 3 out of 4 or 3 out of 300. A failure count
+   * without an attempt count is not a measurement, and `docs/coherence.md` asks for a rate.
+   *
+   * Counts every run and every signal ever recorded, not just the undigested ones - a score
+   * that resets when somebody reads it is meaningless the moment it is read.
+   */
+  tally(): Tally {
+    const shipped = (
+      this.db.prepare("SELECT COUNT(*) AS n FROM runs").get() as { n: number }
+    ).n;
+    const rows = this.db
+      .prepare("SELECT kind, COUNT(*) AS n FROM signals GROUP BY kind")
+      .all() as { kind: SignalKind; n: number }[];
+    const byKind: Partial<Record<SignalKind, number>> = {};
+    let failed = 0;
+    for (const row of rows) {
+      byKind[row.kind] = row.n;
+      failed += row.n;
+    }
+    return { shipped, failed, attempts: shipped + failed, byKind };
+  }
+
   undigestedSignals(): Signal[] {
     return (
       this.db

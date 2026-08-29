@@ -398,7 +398,7 @@ async function main(argv: string[]): Promise<number> {
 
         const runs = store.undigestedRuns();
         if (options.plain) {
-          const text = plainDigest(runs, await tracker.listOpen(), config, coherenceOf(config, store.undigestedSignals()));
+          const text = plainDigest(runs, await tracker.listOpen(), config, coherenceOf(config, store.undigestedSignals(), store.tally()));
           if (!text) {
             process.stdout.write("Nothing landed on staging. Silence is correct.\n");
           } else {
@@ -435,7 +435,7 @@ async function main(argv: string[]): Promise<number> {
       case "digest": {
         if (options.plain) {
           const runs = store.undigestedRuns();
-          const coherence = coherenceOf(config, store.undigestedSignals());
+          const coherence = coherenceOf(config, store.undigestedSignals(), store.tally());
           const text = plainDigest(runs, await tracker.listOpen(), config, coherence);
           if (!text) {
             process.stdout.write("Nothing landed on staging. Silence is correct.\n");
