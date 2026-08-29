@@ -260,7 +260,24 @@ export async function runEngineer(options: EngineerOptions): Promise<EngineerOut
 
   const commitSHA = git.commitAll(`${ticket.id}: ${summary}\n\nBehind feature flag ${flag}.`);
   const changed = git.changedPathsSince(base);
-  assertDiffInBounds(changed, config.boundaries.protectedPaths);
+  /*
+   * The same check again, on the committed diff, as defence in depth - and returned rather
+   * than thrown.
+   *
+   * Reaching here means the check above missed something, which is exactly what happened while
+   * `dirtyPaths` was corrupting the first path in its list: this assertion caught the violation
+   * and threw straight out of the runner. Failing closed was right; crashing was not. A throw
+   * skips the ticket comment, records no signal, and takes the loop down instead of returning
+   * an exit code - so the one outcome a person most needs to hear about was the one that
+   * produced silence.
+   */
+  try {
+    assertDiffInBounds(changed, config.boundaries.protectedPaths);
+  } catch (cause) {
+    const detail = (cause as Error).message;
+    await tracker.comment(ticket.id, `Refused after commit: the diff touched protected paths.\n\n${detail}`);
+    return fail("out-of-bounds", "the committed diff touched protected paths, nothing was merged", detail);
+  }
 
   if (config.gate.featureFlags.required && !diffMentions(git, base, flag)) {
     await tracker.comment(
