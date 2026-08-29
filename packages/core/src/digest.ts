@@ -15,7 +15,7 @@ import type { Config } from "./config.ts";
 import type { AgentRunner } from "./agent.ts";
 import { loadPrompt } from "./agent.ts";
 import type { Ticket, Tracker } from "./tracker.ts";
-import type { Signal, StagedRun, Store } from "./store.ts";
+import type { Signal, StagedRun, Store , Tally } from "./store.ts";
 import { checkAnchor } from "./anchor.ts";
 
 /**
@@ -36,17 +36,30 @@ export interface Coherence {
   anchorExists: boolean;
   /** Every outcome that was not a clean ship, conflicts included. */
   signals: Signal[];
+  /** The score to date. Without the denominator, none of the counts above can be read. */
+  tally: Tally;
 }
 
-export function coherenceOf(config: Config, signals: Signal[]): Coherence {
-  // The same excludes `autopilot check-anchor` uses, or the number here would not match the
-  // command the digest tells the human to run.
-  const anchor = checkAnchor({ root: config.repo.root, exclude: config.boundaries.protectedPaths });
+const NO_TALLY: Tally = { shipped: 0, failed: 0, attempts: 0, byKind: {} };
+
+export function coherenceOf(config: Config, signals: Signal[], tally: Tally = NO_TALLY): Coherence {
+  /*
+   * Nothing narrows this, and that has to stay true.
+   *
+   * It used to pass `boundaries.protectedPaths`, with a comment claiming the number would then
+   * match `autopilot check-anchor`. ADR 0011 removed that coupling from the command and missed
+   * this copy, so the moment self-hosting protected first-party source the digest began hiding
+   * violations inside exactly the files that decide whether the loop may ship - while still
+   * telling the reader to run a command that would report them. A number that disagrees with
+   * the command beside it is worse than no number.
+   */
+  const anchor = checkAnchor({ root: config.repo.root });
   return {
     conflicts: signals.filter((s) => s.kind === "conflict").length,
     anchorViolations: anchor.violations.length,
     anchorExists: !anchor.designMissing,
     signals,
+    tally,
   };
 }
 
@@ -54,10 +67,19 @@ export function describeCoherence(coherence: Coherence): string {
   if (!coherence.anchorExists) {
     return "No DESIGN.md in this product, so there is no anchor and nothing to measure. That is the finding.";
   }
-  const lines = [
+  const { shipped, failed, attempts } = coherence.tally;
+  const lines =
+    attempts === 0
+      ? ["Nothing has run yet, so there is no rate to report."]
+      : [
+          // The denominator first. "3 conflicts" cannot be read without knowing whether that
+          // is 3 out of 4 or 3 out of 300.
+          `${shipped} of ${attempts} attempts reached staging; ${failed} did not.`,
+        ];
+  lines.push(
     `Tickets stopped on an anchor conflict: ${coherence.conflicts}.`,
     `Values in the code that DESIGN.md never declared: ${coherence.anchorViolations}.`,
-  ];
+  );
   if (coherence.conflicts >= 3) {
     lines.push(
       "Three or more conflicts in one batch is the over-specified signal from docs/coherence.md. " +
@@ -130,7 +152,7 @@ export async function runDigest(options: DigestOptions): Promise<DigestResult> {
     return { silent: true, message: "", covered: [] };
   }
 
-  const coherence = coherenceOf(config, signals);
+  const coherence = coherenceOf(config, signals, store.tally());
 
   const prompt = [
     loadPrompt("digest"),

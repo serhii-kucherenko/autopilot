@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runTriage } from "../src/triage.ts";
+import { runTriage, describeBacklog } from "../src/triage.ts";
 import { parseConfig } from "../src/config.ts";
 import { parseBundle } from "../src/bundle.ts";
 import { FakeAgent } from "../src/agent.ts";
@@ -268,4 +268,71 @@ test("with no store there is nothing to check against, and triage still runs", a
   });
   assert.equal(result.created.length, 1);
   assert.deepEqual(result.alreadyTriaged, []);
+});
+
+/*
+ * Two tickets for one thing, and a backlog that does not blow the prompt.
+ *
+ * Triage is told to merge duplicates and it is given the open backlog to do it with - but the
+ * backlog it saw was `id [lane, p, state] title` and nothing else. Two tickets can describe the
+ * same problem in different words ("search is stale" / "results do not refresh") and no reader,
+ * human or model, can tell from titles alone. The description is where the overlap actually is.
+ *
+ * And it was unbounded. A product with three hundred open tickets would have put all three
+ * hundred into one prompt.
+ */
+test("the backlog handed to triage carries enough of each ticket to spot a duplicate", () => {
+  const text = describeBacklog([
+    {
+      id: "AP-1",
+      title: "Search is stale",
+      description: "Typing a new query keeps showing the previous result set until you reload.",
+      lane: "ai",
+      priority: 2,
+      state: "Backlog",
+      stateType: "backlog",
+      labels: [],
+      blockedBy: [],
+      createdAt: "2026-08-28T00:00:00Z",
+    },
+  ]);
+  assert.match(text, /AP-1/);
+  assert.match(text, /Search is stale/);
+  assert.match(text, /previous result set/, "the description is where an overlap is visible");
+});
+
+test("a long description is cut, so one rambling ticket cannot crowd out the rest", () => {
+  const text = describeBacklog([
+    {
+      id: "AP-1",
+      title: "Long one",
+      description: "x".repeat(5000),
+      lane: "ai",
+      priority: 2,
+      state: "Backlog",
+      stateType: "backlog",
+      labels: [],
+      blockedBy: [],
+      createdAt: "2026-08-28T00:00:00Z",
+    },
+  ]);
+  assert.ok(text.length < 1000, `one ticket must not dominate, got ${text.length} chars`);
+});
+
+test("a huge backlog is capped and says how many it left out, rather than silently truncating", () => {
+  const many = Array.from({ length: 300 }, (_, i) => ({
+    id: `AP-${i + 1}`,
+    title: `Ticket ${i + 1}`,
+    description: "something",
+    lane: "ai" as const,
+    priority: 2,
+    state: "Backlog",
+    stateType: "backlog" as const,
+    labels: [],
+    blockedBy: [],
+    createdAt: "2026-08-28T00:00:00Z",
+  }));
+  const text = describeBacklog(many);
+  assert.match(text, /\b\d+ more\b/, "a silent cut would let triage duplicate what it cannot see");
+  assert.ok(text.length < 20000, `the prompt must stay bounded, got ${text.length} chars`);
 });

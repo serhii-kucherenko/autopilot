@@ -132,3 +132,44 @@ test("reopening the store sees what the last process wrote", (t) => {
   t.after(() => second.close());
   assert.equal(second.undrained().length, 1);
 });
+
+/*
+ * "Is it working?" needs a denominator.
+ *
+ * Signals record only the outcomes that were not a clean ship, and runs record the ships. Both
+ * existed; nothing ever put them together, so the digest could say "3 conflicts" and a person
+ * had no way to know whether that was 3 out of 4 or 3 out of 300. A failure count without an
+ * attempt count is not a measurement.
+ */
+test("the store can say how many attempts shipped, which is the only honest success number", (t) => {
+  const s = store();
+  t.after(() => s.close());
+
+  s.recordRun({ ticketId: "AP-1", commitSHA: "a1", branch: "auto/ap-1", flag: "ap_1", summary: "one" });
+  s.recordRun({ ticketId: "AP-2", commitSHA: "a2", branch: "auto/ap-2", flag: "ap_2", summary: "two" });
+  s.recordSignal({ kind: "gate-failed", ticketId: "AP-3" });
+  s.recordSignal({ kind: "conflict", ticketId: "AP-4" });
+  s.recordSignal({ kind: "conflict", ticketId: "AP-5" });
+
+  const tally = s.tally();
+  assert.equal(tally.shipped, 2);
+  assert.equal(tally.failed, 3);
+  assert.equal(tally.attempts, 5);
+  assert.deepEqual(tally.byKind, { "gate-failed": 1, conflict: 2 });
+});
+
+test("a tally on an untouched store is all zeroes, not a divide by zero", (t) => {
+  const s = store();
+  t.after(() => s.close());
+  const tally = s.tally();
+  assert.deepEqual(tally, { shipped: 0, failed: 0, attempts: 0, byKind: {} });
+});
+
+test("the tally counts every run ever, not just the undigested ones", (t) => {
+  const s = store();
+  t.after(() => s.close());
+  s.recordRun({ ticketId: "AP-1", commitSHA: "a1", branch: "b", flag: "f", summary: "one" });
+  s.markDigested(["AP-1"]);
+  // A digest that resets the score would make the number meaningless the moment it is read.
+  assert.equal(s.tally().shipped, 1);
+});
