@@ -60,6 +60,18 @@ const SKIPPED_DIRECTORIES = new Set([
   "out",
   "target",
   "__snapshots__",
+  /*
+   * Eval fixtures.
+   *
+   * `eval/cases.ts` carries whole DESIGN.md documents for small fictional products, because a
+   * case has to judge the agent against a real anchor to mean anything. Scanning them checks
+   * this product's DESIGN.md against another product's tokens, which is a category error
+   * rather than a finding - the same reason `TEST_FILE` is skipped, and it produced the same
+   * kind of noise: three violations that were all correct fixture data.
+   *
+   * Narrow on purpose. This directory holds fixtures and nothing a person looks at.
+   */
+  "eval",
 ]);
 
 /** Xcode writes `DerivedData`, `DerivedData-Sim`, and whatever else someone names a variant. */

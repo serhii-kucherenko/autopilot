@@ -278,3 +278,26 @@ test("exclude honours the config's protected paths, since the loop may not touch
     ["app/globals.css"],
   );
 });
+
+test("eval fixtures are not scanned, because they hold another product's design system", () => {
+  const root = mkdtempSync(join(tmpdir(), "ap-anchor-eval-"));
+  mkdirSync(join(root, "eval"), { recursive: true });
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "DESIGN.md"), "# D\n\nInk is #111318.\n");
+  // A fixture describing a fictional product, whose colours are deliberately not ours.
+  writeFileSync(join(root, "eval", "cases.ts"), 'const DESIGN = "Accent: #2f6bff";\n');
+  // A real source file with the same undeclared colour is still a finding.
+  writeFileSync(join(root, "src", "real.css"), ".x { color: #2f6bff; }\n");
+
+  const report = checkAnchor({ root });
+  const files = report.violations.map((v) => v.file);
+  assert.ok(
+    files.some((f) => f.includes("real.css")),
+    "the checker must still find real drift, or this skip has made it useless",
+  );
+  assert.equal(
+    files.some((f) => f.includes("cases.ts")),
+    false,
+    "a fixture's own design system is not this product's drift",
+  );
+});

@@ -27,6 +27,7 @@ import { runRelease } from "./release.ts";
 import { runLoop } from "./loop.ts";
 import { checkAnchor, formatAnchorReport } from "./anchor.ts";
 import { runDoctor, formatDoctorReport, type TrackerProbe } from "./doctor.ts";
+import { runEval, compareToBaseline, formatEvalReport, type EvalCase } from "./eval.ts";
 
 export const EXIT = { did: 0, failed: 1, nothing: 2 } as const;
 
@@ -47,6 +48,7 @@ const COMMANDS = new Set([
   "digest",
   "release",
   "check-anchor",
+  "eval",
   "prune",
 ]);
 
@@ -66,6 +68,7 @@ Commands
   digest                 write the digest of what landed on staging
   release <ticket>       deploy production. Refuses without a human approval for this commit
   check-anchor           find values the code uses that DESIGN.md never declared
+  eval                   score the prompts against the eval set. --baseline to compare
   prune                  delete acked bundles and their screenshots past the retention window
 
 Options
@@ -75,6 +78,8 @@ Options
   --fake                 file tracker and scripted agent: fully offline
   --plain                digest without a model call
   --cycles <n>           how many loop cycles to run                  (default 1)
+  --baseline <path>      eval: compare against a saved run, and name what regressed
+  --save <path>          eval: write this run's scores, to become the next baseline
   --help
 
 Exit codes
@@ -83,6 +88,8 @@ Exit codes
 `;
 
 interface Options {
+  baseline?: string;
+  save?: string;
   config?: string;
   store?: string;
   "dry-run"?: boolean;
@@ -151,6 +158,8 @@ async function main(argv: string[]): Promise<number> {
       fake: { type: "boolean" },
       plain: { type: "boolean" },
       cycles: { type: "string" },
+      baseline: { type: "string" },
+      save: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -181,6 +190,56 @@ async function main(argv: string[]): Promise<number> {
     });
     process.stdout.write(`${formatDoctorReport(report)}\n`);
     return report.ready ? EXIT.did : EXIT.failed;
+  }
+
+  /*
+   * `autopilot eval` - the only way a prompt change becomes a number.
+   *
+   * It runs before `loadConfig` because it does not use a product config: each case builds its
+   * own throwaway repo. It needs a real agent, and there is deliberately no `--fake`: a scripted
+   * agent never reads the prompt, so a fake eval would score the harness and report a number
+   * that means nothing.
+   */
+  if (command === "eval") {
+    /*
+     * Everything that can fail without spending a model call fails first.
+     *
+     * The first version validated the baseline *after* running the cases, so a typo'd path
+     * burned a full eval run before reporting it - and a test of that error path spent 189
+     * seconds and real model calls proving it. Argument checking belongs before the work,
+     * especially when the work costs money.
+     */
+    const baselinePath = options.baseline;
+    let prior: { name: string; score: number }[] | undefined;
+    if (baselinePath !== undefined) {
+      if (!existsSync(baselinePath)) {
+        process.stderr.write(
+          `no baseline at ${baselinePath}. Run once with --save <path> to make one.\n`,
+        );
+        return EXIT.failed;
+      }
+      prior = JSON.parse(readFileSync(baselinePath, "utf8")) as { name: string; score: number }[];
+    }
+
+    const { CASES } = (await import(join(repoRoot(), "eval", "cases.ts"))) as { CASES: EvalCase[] };
+    const agent = new ClaudeCodeAgent();
+    process.stdout.write(
+      `Running ${CASES.length} eval cases with the real agent. This spends model calls.\n\n`,
+    );
+    const results = await runEval(CASES, () => agent);
+    const diff = prior ? compareToBaseline(prior, results) : undefined;
+
+    process.stdout.write(`${formatEvalReport(results, diff)}\n`);
+    if (options.save) {
+      writeFileSync(
+        options.save,
+        `${JSON.stringify(results.map((r) => ({ name: r.name, score: r.score })), null, 2)}\n`,
+      );
+      process.stdout.write(`\nsaved to ${options.save}\n`);
+    }
+    // A regression against a stated baseline is a failure. With no baseline there is nothing to
+    // fail against, and a first run is information rather than a verdict.
+    return diff && diff.regressed.length > 0 ? EXIT.failed : EXIT.did;
   }
 
   if (command === "check-anchor") {

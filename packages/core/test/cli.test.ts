@@ -564,3 +564,16 @@ test("doctor does not fail a setup just because the network is down", async () =
     "a warn must never be counted as missing",
   );
 });
+
+test("eval is documented and its flags are real, because an undocumented eval is one nobody runs", async () => {
+  const { out } = await run(["help"]);
+  assert.match(out, /\beval\b/);
+  assert.match(out, /--baseline/);
+  assert.match(out, /--save/);
+});
+
+test("eval refuses a baseline path that does not exist, rather than silently scoring nothing", async () => {
+  const { code, err } = await run(["eval", "--baseline", "/nonexistent/baseline.json"]);
+  assert.equal(code, EXIT.failed);
+  assert.match(err, /baseline|--save/i);
+});
